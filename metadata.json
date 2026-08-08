@@ -1,0 +1,8 @@
+{
+  "name": "فنك ماركت - Fenk Market",
+  "description": "تطبيق إدارة المبيعات، المخزون، والديون المحلية للمحلات والبقالات",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

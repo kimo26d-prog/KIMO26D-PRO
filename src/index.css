@@ -1,0 +1,127 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --color-brand-surface: #f8f9ff;
+  --color-brand-surface-dim: #cbdbf5;
+  --color-brand-surface-bright: #f8f9ff;
+  --color-brand-surface-container-lowest: #ffffff;
+  --color-brand-surface-container-low: #eff4ff;
+  --color-brand-surface-container: #e5eeff;
+  --color-brand-surface-container-high: #dce9ff;
+  --color-brand-surface-container-highest: #d3e4fe;
+  --color-brand-on-surface: #0b1c30;
+  --color-brand-on-surface-variant: #45464d;
+  --color-brand-inverse-surface: #213145;
+  --color-brand-inverse-on-surface: #eaf1ff;
+  
+  --color-brand-outline: #76777d;
+  --color-brand-outline-variant: #c6c6cd;
+  --color-brand-surface-tint: #565e74;
+  
+  --color-brand-primary: #000000;
+  --color-brand-on-primary: #ffffff;
+  --color-brand-primary-container: #131b2e;
+  --color-brand-on-primary-container: #7c839b;
+  --color-brand-inverse-primary: #bec6e0;
+  
+  --color-brand-secondary: #006c49;
+  --color-brand-on-secondary: #ffffff;
+  --color-brand-secondary-container: #6cf8bb;
+  --color-brand-on-secondary-container: #00714d;
+  
+  --color-brand-tertiary: #000000;
+  --color-brand-on-tertiary: #ffffff;
+  --color-brand-tertiary-container: #271901;
+  --color-brand-on-tertiary-container: #98805d;
+  
+  --color-brand-error: #ba1a1a;
+  --color-brand-on-error: #ffffff;
+  --color-brand-error-container: #ffdad6;
+  --color-brand-on-error-container: #93000a;
+  
+  --color-brand-primary-fixed: #dae2fd;
+  --color-brand-primary-fixed-dim: #bec6e0;
+  --color-brand-on-primary-fixed: #131b2e;
+  --color-brand-on-primary-fixed-variant: #3f465c;
+  
+  --color-brand-secondary-fixed: #6ffbbe;
+  --color-brand-secondary-fixed-dim: #4edea3;
+  --color-brand-on-secondary-fixed: #002113;
+  --color-brand-on-secondary-fixed-variant: #005236;
+  
+  --color-brand-tertiary-fixed: #fcdeb5;
+  --color-brand-tertiary-fixed-dim: #dec29a;
+  --color-brand-on-tertiary-fixed: #271901;
+  --color-brand-on-tertiary-fixed-variant: #574425;
+  
+  --color-brand-background: #f8f9ff;
+  --color-brand-on-background: #0b1c30;
+  --color-brand-surface-variant: #d3e4fe;
+  
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Manrope", sans-serif;
+}
+
+@layer base {
+  body {
+    background-color: #f8f9ff;
+    color: #0b1c30;
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+}
+
+.material-symbols-outlined {
+  font-family: 'Material Symbols Outlined';
+  font-weight: normal;
+  font-style: normal;
+  font-size: 24px;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  -webkit-font-feature-settings: 'liga';
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Custom login-card styling */
+.login-card {
+  background: white;
+  box-shadow: 0px 4px 12px rgba(15, 23, 42, 0.05);
+  border: 1px solid #e2e8f0;
+}
+
+.input-focus-ring:focus {
+  outline: none;
+  border-color: #0b1c30;
+  box-shadow: 0 0 0 3px rgba(11, 28, 48, 0.1);
+}
+
+/* Arabic Specific Layout Overrides */
+[dir="rtl"] {
+  text-align: right;
+}
+
+[dir="ltr"] {
+  text-align: left;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}

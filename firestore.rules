@@ -1,0 +1,93 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Product validation
+    function isValidProduct(data) {
+      return data.keys().hasAll(['id', 'barcode', 'nameAr', 'sellingPrice', 'quantity'])
+        && data.id is string && data.id.size() <= 128
+        && data.barcode is string && data.barcode.size() <= 128
+        && data.nameAr is string && data.nameAr.size() <= 200
+        && data.sellingPrice is number
+        && data.quantity is number;
+    }
+
+    // CustomerDebt validation
+    function isValidDebt(data) {
+      return data.keys().hasAll(['id', 'name', 'totalDebt'])
+        && data.id is string && data.id.size() <= 128
+        && data.name is string && data.name.size() <= 200
+        && data.totalDebt is number;
+    }
+
+    // Transaction validation
+    function isValidTransaction(data) {
+      return data.keys().hasAll(['id', 'date', 'totalAmount', 'profit', 'paymentMethod'])
+        && data.id is string && data.id.size() <= 128
+        && data.date is string && data.date.size() <= 100
+        && data.totalAmount is number
+        && data.profit is number
+        && (data.paymentMethod == 'cash' || data.paymentMethod == 'card' || data.paymentMethod == 'debt');
+    }
+
+    // Subscriber validation
+    function isValidSubscriber(data) {
+      return data.keys().hasAll(['syncCode', 'shopName', 'status'])
+        && data.syncCode is string && data.syncCode.size() <= 64
+        && data.shopName is string && data.shopName.size() <= 200
+        && (data.status == 'active' || data.status == 'expired' || data.status == 'suspended');
+    }
+
+    // Store root
+    match /stores/{syncCode} {
+      allow read, write: if isValidId(syncCode);
+
+      match /products/{productId} {
+        allow read: if isValidId(syncCode);
+        allow create, update: if isValidId(syncCode) && isValidId(productId) && isValidProduct(incoming());
+        allow delete: if isValidId(syncCode) && isValidId(productId);
+      }
+
+      match /debts/{debtId} {
+        allow read: if isValidId(syncCode);
+        allow create, update: if isValidId(syncCode) && isValidId(debtId) && isValidDebt(incoming());
+        allow delete: if isValidId(syncCode) && isValidId(debtId);
+      }
+
+      match /transactions/{transactionId} {
+        allow read: if isValidId(syncCode);
+        allow create, update: if isValidId(syncCode) && isValidId(transactionId) && isValidTransaction(incoming());
+        allow delete: if isValidId(syncCode) && isValidId(transactionId);
+      }
+    }
+
+    // Subscribers collection for SaaS app administration
+    match /subscribers/{syncCode} {
+      allow read: if isValidId(syncCode);
+      allow create, update: if isValidId(syncCode) && isValidSubscriber(incoming());
+      allow delete: if isValidId(syncCode);
+    }
+
+    // Catch-all default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
