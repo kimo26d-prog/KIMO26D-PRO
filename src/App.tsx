@@ -13,11 +13,14 @@ import DeviceSyncModal from './components/DeviceSyncModal';
 import fenkLogo from './assets/images/fenk_logo_1783465306813.jpg';
 import { LayoutDashboard, ClipboardList, ShoppingCart, Users, BarChart3, LogOut, Calendar, Smartphone, ArrowLeftRight, RefreshCw, ShieldCheck, Database } from 'lucide-react';
 import { playClickSound, playNotificationSound } from './utils/audio';
+import { auth } from './lib/firebase';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { 
   saveStoreToFirestore, 
   subscribeToStoreProducts, 
   subscribeToStoreDebts, 
   subscribeToStoreTransactions,
+  subscribeToSingleSubscriber,
   saveProductToFirestore,
   deleteProductFromFirestore,
   saveDebtToFirestore,
@@ -103,6 +106,20 @@ export default function App() {
   const [showSyncModal, setShowSyncModal] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [lastSyncedTime, setLastSyncedTime] = useState<Date | null>(new Date());
+  const [isStoreSuspended, setIsStoreSuspended] = useState(false);
+
+  // Realtime subscription listener for single store suspension status
+  useEffect(() => {
+    if (!syncCode) return;
+    const unsubscribe = subscribeToSingleSubscriber(syncCode, (sub) => {
+      if (sub && sub.status === 'suspended') {
+        setIsStoreSuspended(true);
+      } else {
+        setIsStoreSuspended(false);
+      }
+    });
+    return () => unsubscribe();
+  }, [syncCode]);
 
   // Push local state to cloud and Firestore
   const pushStateToCloud = useCallback(async (codeToUse?: string) => {
@@ -262,6 +279,17 @@ export default function App() {
     localStorage.setItem('fenk_mahli_transactions', JSON.stringify(transactions));
   }, [transactions]);
 
+  // Monitor Firebase Auth state change
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user && (user.emailVerified || user.providerData.some(p => p.providerId === 'google.com'))) {
+        setIsLoggedIn(true);
+        localStorage.setItem('fenk_mahli_logged_in', 'true');
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
   const handleLoginSuccess = (nameOfShop: string) => {
     setIsLoggedIn(true);
     setShopName(nameOfShop);
@@ -269,7 +297,12 @@ export default function App() {
     localStorage.setItem('fenk_mahli_shop_name', nameOfShop);
   };
 
-  const handleLogOut = () => {
+  const handleLogOut = async () => {
+    try {
+      await signOut(auth);
+    } catch (e) {
+      console.warn('SignOut error:', e);
+    }
     setIsLoggedIn(false);
     localStorage.removeItem('fenk_mahli_logged_in');
   };
@@ -365,6 +398,51 @@ export default function App() {
   return (
     <div className="min-h-screen bg-[#F8FAFF] flex flex-col text-slate-900 select-none pb-12">
       
+      {/* Account Suspended Overlay */}
+      {isStoreSuspended && activeTab !== 'subscribers' && (
+        <div className="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-red-500/50 rounded-3xl max-w-lg w-full p-6 text-center space-y-5 shadow-2xl">
+            <div className="w-16 h-16 rounded-2xl bg-red-500/20 text-red-500 flex items-center justify-center mx-auto border border-red-500/40">
+              <ShieldCheck size={36} />
+            </div>
+            
+            <div className="space-y-2">
+              <h2 className="text-xl font-black font-display text-white">
+                {lang === 'ar' ? 'حساب المحل معطل وموقوف بقرار من المالك' : 'Store Account Suspended'}
+              </h2>
+              <p className="text-xs text-slate-300 leading-relaxed max-w-md mx-auto">
+                {lang === 'ar' 
+                  ? 'تم إيقاف اشتراك هذا المتجر مؤقتاً من طرف مالك وإدارة تطبيق فنك ماركت بسبب عدم تسديد التكاليف الشهرية أو بقرار إداري. يرجى التواصل لإعادة التفعيل.'
+                  : 'Your store subscription has been suspended by the application owner. Please contact support to reactivate.'
+                }
+              </p>
+            </div>
+
+            <div className="p-3 bg-slate-950/80 rounded-2xl border border-slate-800 text-xs text-emerald-400 font-mono font-bold">
+              {lang === 'ar' ? 'كود المزامنة الخاص بك:' : 'Sync Code:'} <span className="text-white bg-slate-800 px-2 py-0.5 rounded">{syncCode}</span>
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-3 pt-2">
+              <a 
+                href="https://wa.me/213550000000" 
+                target="_blank" 
+                rel="noreferrer"
+                className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs rounded-xl transition-all shadow-md flex items-center justify-center gap-2"
+              >
+                <span>{lang === 'ar' ? 'التواصل مع المالك (واتساب)' : 'Contact Owner WhatsApp'}</span>
+              </a>
+
+              <button
+                onClick={() => setActiveTab('subscribers')}
+                className="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs rounded-xl transition-all border border-slate-700 cursor-pointer"
+              >
+                <span>{lang === 'ar' ? 'دخول لوحة المالك (PIN)' : 'Owner Panel Access'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 1. Global Navigation Header */}
       <header className="bg-white border-b border-slate-200/80 sticky top-0 z-40 shadow-sm print:hidden">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">

@@ -185,6 +185,21 @@ export default function SubscribersTab({ lang }: SubscribersTabProps) {
   const handleRenewSubscription = async (sub: SubscriberAccount, months: number) => {
     try {
       setIsLoading(true);
+      const currentEnd = new Date(sub.subscriptionEndDate).getTime();
+      const baseTime = currentEnd > Date.now() ? currentEnd : Date.now();
+      const newEnd = new Date(baseTime + months * 30 * 24 * 60 * 60 * 1000).toISOString();
+      const today = new Date().toISOString().split('T')[0];
+
+      const updatedSub: SubscriberAccount = {
+        ...sub,
+        status: 'active',
+        subscriptionEndDate: newEnd,
+        lastPaymentDate: today
+      };
+
+      // Save to Firestore directly
+      await saveSubscriberToFirestore(updatedSub);
+
       const res = await fetch(`/api/admin/subscribers/${sub.syncCode}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -211,6 +226,11 @@ export default function SubscribersTab({ lang }: SubscribersTabProps) {
     const newStatus = sub.status === 'suspended' ? 'active' : 'suspended';
     try {
       setIsLoading(true);
+      const updatedSub: SubscriberAccount = { ...sub, status: newStatus as 'active' | 'expired' | 'suspended' };
+      
+      // Save directly to Firestore for immediate realtime sync
+      await saveSubscriberToFirestore(updatedSub);
+
       const res = await fetch(`/api/admin/subscribers/${sub.syncCode}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -219,8 +239,8 @@ export default function SubscribersTab({ lang }: SubscribersTabProps) {
 
       if (res.ok) {
         showToast(newStatus === 'suspended' 
-          ? (lang === 'ar' ? `تم إيقاف حساب ${sub.shopName}` : 'Account suspended')
-          : (lang === 'ar' ? `تم إعادة تفعيل حساب ${sub.shopName}` : 'Account activated')
+          ? (lang === 'ar' ? `تم إيقاف حساب ${sub.shopName} بنجاح` : 'Account suspended')
+          : (lang === 'ar' ? `تم إعادة تفعيل حساب ${sub.shopName} بنجاح` : 'Account activated')
         );
         fetchSubscribers();
       }
@@ -238,6 +258,18 @@ export default function SubscribersTab({ lang }: SubscribersTabProps) {
 
     try {
       setIsLoading(true);
+      const updatedSub: SubscriberAccount = {
+        ...selectedSubForEdit,
+        shopName: editShopName,
+        ownerName: editOwnerName,
+        ownerPhone: editOwnerPhone,
+        wilaya: editWilaya,
+        monthlyFee: parseFloat(editMonthlyFee) || 2000,
+        notes: editNotes
+      };
+
+      await saveSubscriberToFirestore(updatedSub);
+
       const res = await fetch(`/api/admin/subscribers/${selectedSubForEdit.syncCode}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -269,6 +301,8 @@ export default function SubscribersTab({ lang }: SubscribersTabProps) {
 
     try {
       setIsLoading(true);
+      await deleteSubscriberFromFirestore(selectedSubForDelete.syncCode);
+
       const res = await fetch(`/api/admin/subscribers/${selectedSubForDelete.syncCode}`, {
         method: 'DELETE'
       });

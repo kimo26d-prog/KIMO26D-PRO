@@ -146,6 +146,37 @@ export function subscribeToSubscribers(
 }
 
 /**
+ * Realtime listener for a single Subscriber Account
+ */
+export function subscribeToSingleSubscriber(
+  syncCode: string,
+  onData: (subscriber: SubscriberAccount | null) => void,
+  onError?: (err: any) => void
+) {
+  const path = `subscribers/${syncCode}`;
+  try {
+    const subRef = doc(db, 'subscribers', syncCode);
+    return onSnapshot(
+      subRef,
+      (docSnap) => {
+        if (docSnap.exists()) {
+          onData(docSnap.data() as SubscriberAccount);
+        } else {
+          onData(null);
+        }
+      },
+      (error) => {
+        handleFirestoreError(error, OperationType.GET, path);
+        if (onError) onError(error);
+      }
+    );
+  } catch (error) {
+    handleFirestoreError(error, OperationType.GET, path);
+    return () => {};
+  }
+}
+
+/**
  * Save complete Store state (products, debts, transactions) to Firestore
  */
 export async function saveStoreToFirestore(
