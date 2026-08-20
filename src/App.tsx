@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Language, AppTab, Product, CustomerDebt, Transaction } from './types';
+import { Language, AppTab, Product, CustomerDebt, Transaction, SHOP_TYPES } from './types';
 import { INITIAL_PRODUCTS, INITIAL_DEBTS, INITIAL_TRANSACTIONS } from './data';
 import LoginScreen from './components/LoginScreen';
 import DashboardTab from './components/DashboardTab';
@@ -8,10 +8,13 @@ import SalesTab from './components/SalesTab';
 import DebtsTab from './components/DebtsTab';
 import AnalyticsTab from './components/AnalyticsTab';
 import SubscribersTab from './components/SubscribersTab';
+import WholesaleTab from './components/WholesaleTab';
 import SupportFooter from './components/SupportFooter';
 import DeviceSyncModal from './components/DeviceSyncModal';
+import StoreSettingsModal from './components/StoreSettingsModal';
+import AIStoreOrganizerModal from './components/AIStoreOrganizerModal';
 import fenkLogo from './assets/images/fenk_logo_1783465306813.jpg';
-import { LayoutDashboard, ClipboardList, ShoppingCart, Users, BarChart3, LogOut, Calendar, Smartphone, ArrowLeftRight, RefreshCw, ShieldCheck, Database } from 'lucide-react';
+import { LayoutDashboard, ClipboardList, ShoppingCart, Users, BarChart3, LogOut, Calendar, Smartphone, ArrowLeftRight, RefreshCw, ShieldCheck, Database, Settings, Sparkles, Boxes } from 'lucide-react';
 import { playClickSound, playNotificationSound } from './utils/audio';
 import { auth } from './lib/firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
@@ -33,61 +36,8 @@ export default function App() {
     return localStorage.getItem('fenk_mahli_logged_in') === 'true';
   });
 
-  const [shopName, setShopName] = useState<string>(() => {
-    return localStorage.getItem('fenk_mahli_shop_name') || 'بقالة التوفير الحديثة';
-  });
-
-  const [lang, setLang] = useState<Language>(() => {
-    const savedLang = localStorage.getItem('fenk_mahli_lang') as Language;
-    return savedLang || 'ar';
-  });
-
-  const [activeTab, setActiveTab] = useState<AppTab>('dashboard');
-  const [inventoryFilter, setInventoryFilter] = useState<string>('');
-
-  // Main collections state
-  const [products, setProducts] = useState<Product[]>(() => {
-    const savedProducts = localStorage.getItem('fenk_mahli_products');
-    if (savedProducts) {
-      try {
-        return JSON.parse(savedProducts);
-      } catch (e) {
-        console.error('Error loading products from local storage, falling back to initial data');
-      }
-    }
-    return INITIAL_PRODUCTS;
-  });
-
-  const [debts, setDebts] = useState<CustomerDebt[]>(() => {
-    const savedDebts = localStorage.getItem('fenk_mahli_debts');
-    if (savedDebts) {
-      try {
-        return JSON.parse(savedDebts);
-      } catch (e) {
-        console.error('Error loading debts from local storage, falling back to initial data');
-      }
-    }
-    return INITIAL_DEBTS;
-  });
-
-  const [transactions, setTransactions] = useState<Transaction[]>(() => {
-    const savedTransactions = localStorage.getItem('fenk_mahli_transactions');
-    if (savedTransactions) {
-      try {
-        return JSON.parse(savedTransactions);
-      } catch (e) {
-        console.error('Error loading transactions from local storage, falling back to initial data');
-      }
-    }
-    return INITIAL_TRANSACTIONS;
-  });
-
-  // Current formatted date/time tracker
-  const [formattedTime, setFormattedTime] = useState('');
-
   // Cross-Device Sync State & Code Management
   const [syncCode, setSyncCode] = useState<string>(() => {
-    // Check URL search param first (e.g. ?syncCode=FENK-8842-SA from scanning QR code)
     if (typeof window !== 'undefined') {
       const urlParams = new URLSearchParams(window.location.search);
       const codeFromUrl = urlParams.get('syncCode');
@@ -102,6 +52,117 @@ export default function App() {
     localStorage.setItem('fenk_mahli_sync_code', newRandCode);
     return newRandCode;
   });
+
+  const [shopName, setShopName] = useState<string>(() => {
+    const code = localStorage.getItem('fenk_mahli_sync_code') || 'DEFAULT';
+    return localStorage.getItem(`fenk_mahli_shop_name_${code}`) || localStorage.getItem('fenk_mahli_shop_name') || 'بقالة التوفير الحديثة';
+  });
+
+  const [shopType, setShopType] = useState<string>(() => {
+    const code = localStorage.getItem('fenk_mahli_sync_code') || 'DEFAULT';
+    return localStorage.getItem(`fenk_mahli_shop_type_${code}`) || localStorage.getItem('fenk_mahli_shop_type') || 'grocery';
+  });
+
+  const [shopLogo, setShopLogo] = useState<string>(() => {
+    const code = localStorage.getItem('fenk_mahli_sync_code') || 'DEFAULT';
+    return localStorage.getItem(`fenk_mahli_shop_logo_${code}`) || localStorage.getItem('fenk_mahli_shop_logo') || fenkLogo;
+  });
+
+  const [shopPhone, setShopPhone] = useState<string>(() => {
+    const code = localStorage.getItem('fenk_mahli_sync_code') || 'DEFAULT';
+    return localStorage.getItem(`fenk_mahli_shop_phone_${code}`) || localStorage.getItem('fenk_mahli_shop_phone') || '0550 00 00 00';
+  });
+
+  const [shopAddress, setShopAddress] = useState<string>(() => {
+    const code = localStorage.getItem('fenk_mahli_sync_code') || 'DEFAULT';
+    return localStorage.getItem(`fenk_mahli_shop_address_${code}`) || localStorage.getItem('fenk_mahli_shop_address') || 'الجزائر العاصمة';
+  });
+
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [showAIOrganizerModal, setShowAIOrganizerModal] = useState(false);
+
+  const [lang, setLang] = useState<Language>(() => {
+    const savedLang = localStorage.getItem('fenk_mahli_lang') as Language;
+    return savedLang || 'ar';
+  });
+
+  const [userRole, setUserRole] = useState<'owner' | 'merchant'>(() => {
+    return (localStorage.getItem('fenk_mahli_user_role') as 'owner' | 'merchant') || 'owner';
+  });
+
+  const [activeTab, setActiveTab] = useState<AppTab>('dashboard');
+  const [inventoryFilter, setInventoryFilter] = useState<string>('');
+
+  // Scoped Store Loaders to prevent data leakage between stores and clear initial mock data
+  const loadScopedProducts = (code: string): Product[] => {
+    const filterMock = (arr: any[]): Product[] => {
+      if (!Array.isArray(arr)) return [];
+      return arr.filter((p: Product) => p && p.id && !['prod-1', 'prod-2', 'prod-3', 'prod-4', 'prod-5', 'prod-6', 'prod-7', 'prod-8'].includes(p.id));
+    };
+
+    const saved = localStorage.getItem(`fenk_mahli_products_${code}`);
+    if (saved) {
+      try { return filterMock(JSON.parse(saved)); } catch (e) {}
+    }
+    const legacy = localStorage.getItem('fenk_mahli_products');
+    if (legacy) {
+      try { return filterMock(JSON.parse(legacy)); } catch (e) {}
+    }
+    return [];
+  };
+
+  const loadScopedDebts = (code: string): CustomerDebt[] => {
+    const filterMock = (arr: any[]): CustomerDebt[] => {
+      if (!Array.isArray(arr)) return [];
+      return arr.filter((d: CustomerDebt) => d && d.id && !['debt-1', 'debt-2', 'debt-3'].includes(d.id));
+    };
+
+    const saved = localStorage.getItem(`fenk_mahli_debts_${code}`);
+    if (saved) {
+      try { return filterMock(JSON.parse(saved)); } catch (e) {}
+    }
+    const legacy = localStorage.getItem('fenk_mahli_debts');
+    if (legacy) {
+      try { return filterMock(JSON.parse(legacy)); } catch (e) {}
+    }
+    return [];
+  };
+
+  const loadScopedTransactions = (code: string): Transaction[] => {
+    const filterMock = (arr: any[]): Transaction[] => {
+      if (!Array.isArray(arr)) return [];
+      return arr.filter((t: Transaction) => t && t.id && !['tx-1', 'tx-2', 'tx-3', 'tx-4', 'tx-5'].includes(t.id));
+    };
+
+    const saved = localStorage.getItem(`fenk_mahli_transactions_${code}`);
+    if (saved) {
+      try { return filterMock(JSON.parse(saved)); } catch (e) {}
+    }
+    const legacy = localStorage.getItem('fenk_mahli_transactions');
+    if (legacy) {
+      try { return filterMock(JSON.parse(legacy)); } catch (e) {}
+    }
+    return [];
+  };
+
+  // Main collections state scoped strictly to current store
+  const [products, setProducts] = useState<Product[]>(() => {
+    const code = localStorage.getItem('fenk_mahli_sync_code') || 'DEFAULT';
+    return loadScopedProducts(code);
+  });
+
+  const [debts, setDebts] = useState<CustomerDebt[]>(() => {
+    const code = localStorage.getItem('fenk_mahli_sync_code') || 'DEFAULT';
+    return loadScopedDebts(code);
+  });
+
+  const [transactions, setTransactions] = useState<Transaction[]>(() => {
+    const code = localStorage.getItem('fenk_mahli_sync_code') || 'DEFAULT';
+    return loadScopedTransactions(code);
+  });
+
+  // Current formatted date/time tracker
+  const [formattedTime, setFormattedTime] = useState('');
 
   const [showSyncModal, setShowSyncModal] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -204,32 +265,76 @@ export default function App() {
     return true;
   };
 
-  // Attach Firebase Firestore Realtime Listeners
+  // Attach Firebase Firestore Realtime Listeners with strict store isolation
   useEffect(() => {
     if (!isLoggedIn || !syncCode) return;
 
-    // Initial push on login
-    pushStateToCloud();
+    // Load store-scoped local storage data first upon switching store code
+    const scopedP = loadScopedProducts(syncCode);
+    const scopedD = loadScopedDebts(syncCode);
+    const scopedT = loadScopedTransactions(syncCode);
+
+    setProducts(scopedP);
+    setDebts(scopedD);
+    setTransactions(scopedT);
+
+    // Initial push to cloud only if store has data
+    if (scopedP.length > 0 || scopedD.length > 0 || scopedT.length > 0) {
+      pushStateToCloud();
+    }
 
     // Subscribe to Firestore collections in real-time
     const unsubscribeProducts = subscribeToStoreProducts(syncCode, (remoteProducts) => {
-      if (remoteProducts && remoteProducts.length > 0) {
-        setProducts(remoteProducts);
-        setLastSyncedTime(new Date());
+      if (Array.isArray(remoteProducts)) {
+        const cleanRemote = remoteProducts.filter((p: Product) => p && p.id && !['prod-1', 'prod-2', 'prod-3', 'prod-4', 'prod-5', 'prod-6', 'prod-7', 'prod-8'].includes(p.id));
+        if (cleanRemote.length > 0) {
+          setProducts(cleanRemote);
+          setLastSyncedTime(new Date());
+        } else {
+          const localScoped = loadScopedProducts(syncCode);
+          if (localScoped.length > 0) {
+            localScoped.forEach(p => saveProductToFirestore(syncCode, p));
+            setProducts(localScoped);
+          } else {
+            setProducts([]);
+          }
+        }
       }
     });
 
     const unsubscribeDebts = subscribeToStoreDebts(syncCode, (remoteDebts) => {
-      if (remoteDebts && remoteDebts.length > 0) {
-        setDebts(remoteDebts);
-        setLastSyncedTime(new Date());
+      if (Array.isArray(remoteDebts)) {
+        const cleanRemote = remoteDebts.filter((d: CustomerDebt) => d && d.id && !['debt-1', 'debt-2', 'debt-3'].includes(d.id));
+        if (cleanRemote.length > 0) {
+          setDebts(cleanRemote);
+          setLastSyncedTime(new Date());
+        } else {
+          const localScoped = loadScopedDebts(syncCode);
+          if (localScoped.length > 0) {
+            localScoped.forEach(d => saveDebtToFirestore(syncCode, d));
+            setDebts(localScoped);
+          } else {
+            setDebts([]);
+          }
+        }
       }
     });
 
     const unsubscribeTransactions = subscribeToStoreTransactions(syncCode, (remoteTransactions) => {
-      if (remoteTransactions && remoteTransactions.length > 0) {
-        setTransactions(remoteTransactions);
-        setLastSyncedTime(new Date());
+      if (Array.isArray(remoteTransactions)) {
+        const cleanRemote = remoteTransactions.filter((t: Transaction) => t && t.id && !['tx-1', 'tx-2', 'tx-3', 'tx-4', 'tx-5'].includes(t.id));
+        if (cleanRemote.length > 0) {
+          setTransactions(cleanRemote);
+          setLastSyncedTime(new Date());
+        } else {
+          const localScoped = loadScopedTransactions(syncCode);
+          if (localScoped.length > 0) {
+            localScoped.forEach(t => saveTransactionToFirestore(syncCode, t));
+            setTransactions(localScoped);
+          } else {
+            setTransactions([]);
+          }
+        }
       }
     });
 
@@ -266,18 +371,24 @@ export default function App() {
     return () => clearInterval(timer);
   }, [lang]);
 
-  // Persist data collections whenever they change
+  // Persist data collections whenever they change (scoped by syncCode)
   useEffect(() => {
+    if (!syncCode) return;
+    localStorage.setItem(`fenk_mahli_products_${syncCode}`, JSON.stringify(products));
     localStorage.setItem('fenk_mahli_products', JSON.stringify(products));
-  }, [products]);
+  }, [products, syncCode]);
 
   useEffect(() => {
+    if (!syncCode) return;
+    localStorage.setItem(`fenk_mahli_debts_${syncCode}`, JSON.stringify(debts));
     localStorage.setItem('fenk_mahli_debts', JSON.stringify(debts));
-  }, [debts]);
+  }, [debts, syncCode]);
 
   useEffect(() => {
+    if (!syncCode) return;
+    localStorage.setItem(`fenk_mahli_transactions_${syncCode}`, JSON.stringify(transactions));
     localStorage.setItem('fenk_mahli_transactions', JSON.stringify(transactions));
-  }, [transactions]);
+  }, [transactions, syncCode]);
 
   // Monitor Firebase Auth state change
   useEffect(() => {
@@ -290,11 +401,37 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  const handleLoginSuccess = (nameOfShop: string) => {
+  const handleLoginSuccess = (nameOfShop: string, role: 'owner' | 'merchant' = 'owner') => {
+    const currentCode = localStorage.getItem('fenk_mahli_sync_code') || syncCode;
     setIsLoggedIn(true);
+    setUserRole(role);
     setShopName(nameOfShop);
+
+    if (currentCode !== syncCode) {
+      setSyncCode(currentCode);
+    }
+
+    // Instantly load data for the newly logged-in store code
+    const loadedProds = loadScopedProducts(currentCode);
+    const loadedDebts = loadScopedDebts(currentCode);
+    const loadedTx = loadScopedTransactions(currentCode);
+    setProducts(loadedProds);
+    setDebts(loadedDebts);
+    setTransactions(loadedTx);
+
+    const logo = localStorage.getItem(`fenk_mahli_shop_logo_${currentCode}`) || localStorage.getItem('fenk_mahli_shop_logo') || fenkLogo;
+    const type = localStorage.getItem(`fenk_mahli_shop_type_${currentCode}`) || localStorage.getItem('fenk_mahli_shop_type') || 'grocery';
+    setShopLogo(logo);
+    setShopType(type);
+
     localStorage.setItem('fenk_mahli_logged_in', 'true');
     localStorage.setItem('fenk_mahli_shop_name', nameOfShop);
+    localStorage.setItem(`fenk_mahli_shop_name_${currentCode}`, nameOfShop);
+    localStorage.setItem('fenk_mahli_user_role', role);
+
+    if (role === 'merchant') {
+      setActiveTab('dashboard');
+    }
   };
 
   const handleLogOut = async () => {
@@ -304,23 +441,44 @@ export default function App() {
       console.warn('SignOut error:', e);
     }
     setIsLoggedIn(false);
+    setUserRole('owner');
+    // Clear state in memory so no store data remains visible on logout
+    setProducts([]);
+    setDebts([]);
+    setTransactions([]);
     localStorage.removeItem('fenk_mahli_logged_in');
+    localStorage.removeItem('fenk_mahli_user_role');
   };
 
-  // State modifiers with instant Firebase sync
+  // State modifiers with instant Firebase sync & local storage persistence
   const handleAddProduct = (newProduct: Product) => {
-    setProducts([newProduct, ...products]);
-    if (syncCode) saveProductToFirestore(syncCode, newProduct);
+    const updated = [newProduct, ...products];
+    setProducts(updated);
+    if (syncCode) {
+      localStorage.setItem(`fenk_mahli_products_${syncCode}`, JSON.stringify(updated));
+      localStorage.setItem('fenk_mahli_products', JSON.stringify(updated));
+      saveProductToFirestore(syncCode, newProduct);
+    }
   };
 
   const handleUpdateProduct = (updatedProduct: Product) => {
-    setProducts(products.map(p => p.id === updatedProduct.id ? updatedProduct : p));
-    if (syncCode) saveProductToFirestore(syncCode, updatedProduct);
+    const updated = products.map(p => p.id === updatedProduct.id ? updatedProduct : p);
+    setProducts(updated);
+    if (syncCode) {
+      localStorage.setItem(`fenk_mahli_products_${syncCode}`, JSON.stringify(updated));
+      localStorage.setItem('fenk_mahli_products', JSON.stringify(updated));
+      saveProductToFirestore(syncCode, updatedProduct);
+    }
   };
 
   const handleDeleteProduct = (productId: string) => {
-    setProducts(products.filter(p => p.id !== productId));
-    if (syncCode) deleteProductFromFirestore(syncCode, productId);
+    const updated = products.filter(p => p.id !== productId);
+    setProducts(updated);
+    if (syncCode) {
+      localStorage.setItem(`fenk_mahli_products_${syncCode}`, JSON.stringify(updated));
+      localStorage.setItem('fenk_mahli_products', JSON.stringify(updated));
+      deleteProductFromFirestore(syncCode, productId);
+    }
   };
 
   const handleAddCustomer = (newCustomer: CustomerDebt) => {
@@ -353,6 +511,10 @@ export default function App() {
   // Switch tabs cleanly, allowing filtered entries (e.g., jump from low stock warnings to filtered inventory list)
   const handleNavigate = (tab: AppTab, filter?: string) => {
     playClickSound();
+    if (tab === 'subscribers' && userRole !== 'owner') {
+      setActiveTab('dashboard');
+      return;
+    }
     setInventoryFilter(filter || '');
     setActiveTab(tab);
   };
@@ -362,6 +524,7 @@ export default function App() {
       dashboard: "لوحة التحكم",
       inventory: "إدارة المخزون",
       sales: "الكاشير والمبيعات",
+      wholesale: "البيع بالجملة (Gros)",
       debts: "دفتر الديون",
       analytics: "التقارير والتحليلات",
       subscribers: "لوحة المالك (إدارة المشتركين)",
@@ -373,6 +536,7 @@ export default function App() {
       dashboard: "Dashboard",
       inventory: "Inventory Control",
       sales: "POS Cashier",
+      wholesale: "Wholesale & Bulk",
       debts: "Debtor Book",
       analytics: "Reports & Audits",
       subscribers: "Owner Portal (Subscribers)",
@@ -432,12 +596,14 @@ export default function App() {
                 <span>{lang === 'ar' ? 'التواصل مع المالك (واتساب)' : 'Contact Owner WhatsApp'}</span>
               </a>
 
-              <button
-                onClick={() => setActiveTab('subscribers')}
-                className="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs rounded-xl transition-all border border-slate-700 cursor-pointer"
-              >
-                <span>{lang === 'ar' ? 'دخول لوحة المالك (PIN)' : 'Owner Panel Access'}</span>
-              </button>
+              {userRole === 'owner' && (
+                <button
+                  onClick={() => setActiveTab('subscribers')}
+                  className="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs rounded-xl transition-all border border-slate-700 cursor-pointer"
+                >
+                  <span>{lang === 'ar' ? 'دخول لوحة المالك (PIN)' : 'Owner Panel Access'}</span>
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -452,12 +618,23 @@ export default function App() {
             <div className="flex items-center gap-3">
               <img 
                 alt="Fenk Mahli" 
-                className="w-10 h-10 object-contain rounded-xl border border-slate-100 bg-[#f8f9ff] p-0.5"
-                src={fenkLogo} 
+                className="w-10 h-10 object-contain rounded-xl border border-slate-200/80 bg-white p-0.5 shadow-2xs cursor-pointer hover:opacity-90 transition-opacity"
+                src={shopLogo}
+                onClick={() => setShowSettingsModal(true)}
+                title={lang === 'ar' ? 'تغيير شعار وإعدادات المتجر' : 'Change Store Logo & Settings'}
               />
               <div>
-                <h1 className="text-sm font-extrabold font-display text-slate-950 flex items-center gap-1.5 leading-none">
+                <h1 className="text-sm font-extrabold font-display text-slate-950 flex flex-wrap items-center gap-1.5 leading-none">
                   <span>{shopName}</span>
+                  {(() => {
+                    const currentSt = SHOP_TYPES.find(st => st.id === shopType) || SHOP_TYPES[0];
+                    return (
+                      <span className="bg-amber-50 text-amber-900 border border-amber-200/80 text-[9px] px-2 py-0.5 rounded-full font-bold flex items-center gap-1" title={lang === 'ar' ? `نشاط المحل: ${currentSt.nameAr}` : `Shop Type: ${currentSt.nameEn}`}>
+                        <span>{currentSt.icon}</span>
+                        <span>{lang === 'ar' ? currentSt.nameAr : currentSt.nameEn}</span>
+                      </span>
+                    );
+                  })()}
                   <span className="bg-emerald-100 text-[#006c49] text-[9px] px-2 py-0.5 rounded-full font-sans font-bold">
                     {t.activeBadge}
                   </span>
@@ -473,9 +650,39 @@ export default function App() {
               </div>
             </div>
 
-            {/* Device Sync, Language & Log out */}
+            {/* Device Sync, Settings, Language & Log out */}
             <div className="flex items-center gap-2 sm:gap-3">
               
+              {/* AI Store Organizer Header Button */}
+              <button
+                onClick={() => {
+                  playClickSound();
+                  setShowAIOrganizerModal(true);
+                }}
+                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold font-display transition-all cursor-pointer flex items-center gap-1.5 shadow-xs border border-emerald-400/30"
+                title={lang === 'ar' ? 'مُنظّم المتجر بالذكاء الاصطناعي' : 'AI Store Organizer'}
+              >
+                <Sparkles size={14} className="text-emerald-200 animate-pulse" />
+                <span className="hidden sm:inline">
+                  {lang === 'ar' ? 'مُنظّم المتجر (AI)' : 'AI Organizer'}
+                </span>
+              </button>
+
+              {/* Store & Invoice Logo Settings Button */}
+              <button
+                onClick={() => {
+                  playClickSound();
+                  setShowSettingsModal(true);
+                }}
+                className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-200/90 rounded-xl text-xs font-bold font-display transition-all cursor-pointer flex items-center gap-1.5 shadow-2xs"
+                title={lang === 'ar' ? 'إعدادات المتجر وشعار الفاتورة' : 'Store & Logo Settings'}
+              >
+                <Settings size={14} className="text-[#006c49]" />
+                <span className="hidden sm:inline">
+                  {lang === 'ar' ? 'شعار وإعدادات الفاتورة' : 'Store & Logo'}
+                </span>
+              </button>
+
               {/* Cross-Device Link Button */}
               <button 
                 onClick={() => setShowSyncModal(true)}
@@ -556,6 +763,19 @@ export default function App() {
                 <span>{t.sales}</span>
               </button>
 
+              {/* Wholesale / Bulk Sales */}
+              <button
+                onClick={() => handleNavigate('wholesale')}
+                className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold font-display transition-all whitespace-nowrap cursor-pointer ${
+                  activeTab === 'wholesale' 
+                    ? 'bg-indigo-900 text-white shadow-sm ring-1 ring-indigo-500/30' 
+                    : 'text-slate-600 hover:bg-slate-200/50 hover:text-slate-900'
+                }`}
+              >
+                <Boxes size={14} className={activeTab === 'wholesale' ? 'text-indigo-300' : 'text-indigo-600'} />
+                <span>{t.wholesale}</span>
+              </button>
+
               {/* Debts */}
               <button
                 onClick={() => handleNavigate('debts')}
@@ -582,18 +802,20 @@ export default function App() {
                 <span>{t.analytics}</span>
               </button>
 
-              {/* Owner / Subscribers Window */}
-              <button
-                onClick={() => handleNavigate('subscribers')}
-                className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold font-display transition-all whitespace-nowrap cursor-pointer border ${
-                  activeTab === 'subscribers' 
-                    ? 'bg-emerald-700 text-white border-emerald-800 shadow-sm' 
-                    : 'bg-emerald-50 text-emerald-950 border-emerald-200 hover:bg-emerald-100/80'
-                }`}
-              >
-                <ShieldCheck size={15} className={activeTab === 'subscribers' ? 'text-white' : 'text-emerald-700'} />
-                <span>{t.subscribers}</span>
-              </button>
+              {/* Owner / Subscribers Window - ONLY for App Owner */}
+              {userRole === 'owner' && (
+                <button
+                  onClick={() => handleNavigate('subscribers')}
+                  className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold font-display transition-all whitespace-nowrap cursor-pointer border ${
+                    activeTab === 'subscribers' 
+                      ? 'bg-emerald-700 text-white border-emerald-800 shadow-sm' 
+                      : 'bg-emerald-50 text-emerald-950 border-emerald-200 hover:bg-emerald-100/80'
+                  }`}
+                >
+                  <ShieldCheck size={15} className={activeTab === 'subscribers' ? 'text-white' : 'text-emerald-700'} />
+                  <span>{t.subscribers}</span>
+                </button>
+              )}
             </nav>
           </div>
         </div>
@@ -608,17 +830,21 @@ export default function App() {
             debts={debts} 
             transactions={transactions} 
             onNavigate={handleNavigate}
+            onUpdateProduct={handleUpdateProduct}
+            onOpenAIOrganizer={() => setShowAIOrganizerModal(true)}
           />
         )}
 
         {activeTab === 'inventory' && (
           <InventoryTab 
             lang={lang} 
+            shopType={shopType}
             products={products} 
             onAddProduct={handleAddProduct} 
             onUpdateProduct={handleUpdateProduct} 
             onDeleteProduct={handleDeleteProduct}
             initialFilter={inventoryFilter}
+            onOpenAIOrganizer={() => setShowAIOrganizerModal(true)}
           />
         )}
 
@@ -628,6 +854,22 @@ export default function App() {
             products={products} 
             debts={debts} 
             onCompleteSale={handleCompleteSale}
+            onAddCustomer={handleAddCustomer}
+          />
+        )}
+
+        {activeTab === 'wholesale' && (
+          <WholesaleTab 
+            lang={lang} 
+            shopName={shopName}
+            shopPhone={shopPhone}
+            shopAddress={shopAddress}
+            shopLogo={shopLogo}
+            products={products} 
+            debts={debts} 
+            transactions={transactions}
+            onCompleteSale={handleCompleteSale}
+            onUpdateProduct={handleUpdateProduct}
             onAddCustomer={handleAddCustomer}
           />
         )}
@@ -648,7 +890,7 @@ export default function App() {
           />
         )}
 
-        {activeTab === 'subscribers' && (
+        {activeTab === 'subscribers' && userRole === 'owner' && (
           <SubscribersTab 
             lang={lang} 
           />
@@ -670,6 +912,38 @@ export default function App() {
           onInitiatePairing={handleInitiatePairing}
           onForceSync={() => pushStateToCloud()}
           shopName={shopName}
+        />
+      )}
+
+      {/* Store Logo & Printed Invoice Settings Modal */}
+      {showSettingsModal && (
+        <StoreSettingsModal
+          lang={lang}
+          isOpen={showSettingsModal}
+          onClose={() => setShowSettingsModal(false)}
+          shopName={shopName}
+          shopType={shopType}
+          syncCode={syncCode}
+          onUpdateSettings={(newSettings) => {
+            setShopName(newSettings.shopName);
+            setShopType(newSettings.shopType);
+            setShopLogo(newSettings.shopLogo);
+            if (newSettings.shopPhone) setShopPhone(newSettings.shopPhone);
+            if (newSettings.shopAddress) setShopAddress(newSettings.shopAddress);
+          }}
+        />
+      )}
+
+      {/* AI Store Organizer Modal */}
+      {showAIOrganizerModal && (
+        <AIStoreOrganizerModal
+          lang={lang}
+          shopName={shopName}
+          products={products}
+          transactions={transactions}
+          debts={debts}
+          isOpen={showAIOrganizerModal}
+          onClose={() => setShowAIOrganizerModal(false)}
         />
       )}
 

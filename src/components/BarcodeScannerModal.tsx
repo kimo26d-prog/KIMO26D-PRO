@@ -11,6 +11,7 @@ interface BarcodeScannerModalProps {
   onScanSuccess: (scannedCode: string) => void;
   title?: string;
   continuous?: boolean;
+  lastScanFeedback?: { message: string; isError?: boolean } | null;
 }
 
 export default function BarcodeScannerModal({
@@ -19,7 +20,8 @@ export default function BarcodeScannerModal({
   onClose,
   onScanSuccess,
   title,
-  continuous = false
+  continuous = false,
+  lastScanFeedback
 }: BarcodeScannerModalProps) {
   const [scannerError, setScannerError] = useState<string | null>(null);
   const [isScanning, setIsScanning] = useState(false);
@@ -33,15 +35,18 @@ export default function BarcodeScannerModal({
   const lastScanTimeRef = useRef<number>(0);
   const scannerContainerId = 'fenk-barcode-scanner-region';
 
+  const manualInputRef = useRef<HTMLInputElement | null>(null);
+
   const translations = {
     ar: {
       defaultTitle: "ماسح الباركود بالكاميرا (حقيقي)",
       subtitle: "وجّه كاميرا الهاتف أو جهاز الكاشير مباشرة نحو باركود المنتج",
       continuousSub: "وضع الكاشير السريع: يتم إضافة السلعة وحفظ الباركود تلقائياً",
-      manualTitle: "أو أدخل رقم الباركود يدوياً",
+      manualTitle: "أو أدخل رقم الباركود يدوياً (أو اختر تجريبي):",
       manualPlaceholder: "مثال: 6281000112233",
       submitManual: "إدخال الباركود",
       lastScanned: "تم مسح الباركود بنجاح:",
+      noCameraDeviceErr: "لم يتم العثور على كاميرا في هذا الجهاز (Requested device not found). يمكنك إدخال الباركود يدوياً بأمان.",
       cameraPermissionErr: "تعذر فتح الكاميرا. يرجى التأكد من منح الإذن بالكاميرا في المتصفح والتحقق من توصيل الكاميرا.",
       close: "إغلاق الماسح",
       switchCam: "تبديل الكاميرا",
@@ -52,10 +57,11 @@ export default function BarcodeScannerModal({
       defaultTitle: "Real Camera Barcode Scanner",
       subtitle: "Point camera directly at the product barcode label",
       continuousSub: "Continuous Register Mode: Items added automatically on each scan",
-      manualTitle: "Or enter barcode number manually",
+      manualTitle: "Or enter barcode number manually (or test sample):",
       manualPlaceholder: "e.g., 6281000112233",
       submitManual: "Submit Barcode",
       lastScanned: "Barcode scanned successfully:",
+      noCameraDeviceErr: "No camera device found on this system. You can enter the barcode manually below.",
       cameraPermissionErr: "Camera access failed. Please ensure camera permissions are enabled in your browser.",
       close: "Close Scanner",
       switchCam: "Flip Camera",
@@ -97,11 +103,25 @@ export default function BarcodeScannerModal({
         }
       } catch (err: any) {
         console.warn("Camera enumeration error:", err);
-        try {
-          await startScanning({ facingMode: "environment" });
-        } catch (fallbackErr: any) {
+        const errString = String(err?.message || err || '');
+        if (errString.includes('NotFoundError') || errString.includes('device not found')) {
           if (isMounted) {
-            setScannerError(t.cameraPermissionErr);
+            setScannerError(t.noCameraDeviceErr);
+            setTimeout(() => manualInputRef.current?.focus(), 300);
+          }
+        } else {
+          try {
+            await startScanning({ facingMode: "environment" });
+          } catch (fallbackErr: any) {
+            if (isMounted) {
+              const fallbackStr = String(fallbackErr?.message || fallbackErr || '');
+              if (fallbackStr.includes('NotFoundError') || fallbackStr.includes('device not found')) {
+                setScannerError(t.noCameraDeviceErr);
+              } else {
+                setScannerError(t.cameraPermissionErr);
+              }
+              setTimeout(() => manualInputRef.current?.focus(), 300);
+            }
           }
         }
       }
@@ -176,10 +196,16 @@ export default function BarcodeScannerModal({
         }
       );
     } catch (err: any) {
-      console.error("Scanner start error:", err);
+      console.warn("Scanner start error:", err);
       playErrorSound();
-      setScannerError(t.cameraPermissionErr);
+      const errStr = String(err?.message || err || '');
+      if (errStr.includes('NotFoundError') || errStr.includes('device not found')) {
+        setScannerError(t.noCameraDeviceErr);
+      } else {
+        setScannerError(t.cameraPermissionErr);
+      }
       setIsScanning(false);
+      setTimeout(() => manualInputRef.current?.focus(), 300);
     }
   };
 
@@ -287,6 +313,27 @@ export default function BarcodeScannerModal({
           
           <div id={scannerContainerId} className="w-full h-full object-cover"></div>
 
+          {/* Live Scan Notification Toast Banner directly on top of camera preview */}
+          {lastScanFeedback && (
+            <div className="absolute top-3 left-3 right-3 z-30 pointer-events-none animate-bounce-in">
+              <div className={`p-3 rounded-2xl border backdrop-blur-md shadow-xl text-xs font-bold font-display flex items-center justify-between gap-2.5 ${
+                lastScanFeedback.isError
+                  ? 'bg-rose-950/90 border-rose-700/80 text-rose-200'
+                  : 'bg-emerald-950/90 border-emerald-600/80 text-emerald-200'
+              }`}>
+                <div className="flex items-center gap-2">
+                  {lastScanFeedback.isError ? (
+                    <AlertCircle size={18} className="text-rose-400 shrink-0" />
+                  ) : (
+                    <CheckCircle2 size={18} className="text-emerald-400 shrink-0" />
+                  )}
+                  <span className="leading-tight">{lastScanFeedback.message}</span>
+                </div>
+                <Volume2 size={16} className={`${lastScanFeedback.isError ? 'text-rose-400' : 'text-emerald-400'} animate-pulse shrink-0`} />
+              </div>
+            </div>
+          )}
+
           {/* Barcode Target Overlay Reticle */}
           {isScanning && !scannerError && (
             <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center p-4">
@@ -375,15 +422,31 @@ export default function BarcodeScannerModal({
 
         {/* Manual Barcode Fallback Input */}
         <div className="p-4 bg-slate-900 border-t border-slate-800 space-y-2">
-          <p className="text-[11px] font-semibold text-slate-400">
-            {t.manualTitle}
-          </p>
+          <div className="flex items-center justify-between">
+            <p className="text-[11px] font-semibold text-slate-400">
+              {t.manualTitle}
+            </p>
+            <div className="flex items-center gap-1.5 text-[10px] text-slate-400">
+              <span>{lang === 'ar' ? 'باركوادت حقيقية للتجربة:' : 'Sample Barcodes:'}</span>
+              {['6281000112233', '6130000111111'].map((sampleCode) => (
+                <button
+                  key={sampleCode}
+                  type="button"
+                  onClick={() => handleScan(sampleCode)}
+                  className="px-2 py-0.5 rounded bg-slate-800 hover:bg-emerald-600 hover:text-white text-slate-300 font-mono text-[10px] border border-slate-700 transition-all cursor-pointer"
+                >
+                  {sampleCode.slice(-6)}
+                </button>
+              ))}
+            </div>
+          </div>
           <form onSubmit={handleManualSubmit} className="flex gap-2">
             <div className="relative flex-1">
               <span className="absolute inset-y-0 right-3 flex items-center text-slate-500">
                 <Barcode size={16} />
               </span>
               <input
+                ref={manualInputRef}
                 type="text"
                 value={manualCode}
                 onChange={(e) => setManualCode(e.target.value)}

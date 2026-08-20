@@ -78,9 +78,19 @@ service cloud.firestore {
       }
     }
 
+    // User accounts collection
+    match /users/{userId} {
+      allow read, write: if isValidId(userId);
+    }
+
+    // Test connection doc
+    match /test/{docId} {
+      allow read, write: if isValidId(docId);
+    }
+
     // Subscribers collection for SaaS app administration
     match /subscribers/{syncCode} {
-      allow read: if isValidId(syncCode);
+      allow read: if true;
       allow create, update: if isValidId(syncCode) && isValidSubscriber(incoming());
       allow delete: if isValidId(syncCode);
     }

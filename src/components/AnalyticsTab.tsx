@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Language, Transaction, SaleItem } from '../types';
 import { Search, ShoppingBag, CreditCard, DollarSign, ArrowUpRight, BarChart3, Receipt, Eye, Check } from 'lucide-react';
 import fenkLogo from '../assets/images/fenk_logo_1783465306813.jpg';
+import InvoiceModal from './InvoiceModal';
 
 interface AnalyticsTabProps {
   lang: Language;
@@ -33,14 +34,12 @@ export default function AnalyticsTab({ lang, transactions }: AnalyticsTabProps) 
       thMethod: "الدفع",
       viewReceipt: "تفاصيل",
       currency: "د.ج",
-      receiptTitle: "فاتورة مبيعات مبسطة",
+      receiptTitle: "فاتورة مبيعات",
       item: "السلعة",
       qty: "الكمية",
       price: "السعر",
-      total: "المجموع",
-      subtotal: "المجموع الفرعي",
-      vat: "ضريبة القيمة المضافة (15%)",
-      finalTotal: "الصافي المستحق",
+      total: "المجموع الصافي",
+      finalTotal: "المبلغ الصافي المستحق",
       paymentMethod: "طريقة السداد",
       customer: "العميل المسؤول",
       thankYou: "نشكركم لتسوقكم من متجرنا",
@@ -67,14 +66,12 @@ export default function AnalyticsTab({ lang, transactions }: AnalyticsTabProps) 
       thMethod: "Method",
       viewReceipt: "Receipt",
       currency: "DZD",
-      receiptTitle: "Simplified Sales Invoice",
+      receiptTitle: "Sales Invoice",
       item: "Item",
       qty: "Qty",
       price: "Price",
-      total: "Total",
-      subtotal: "Subtotal",
-      vat: "VAT (15%)",
-      finalTotal: "Net Charged",
+      total: "Net Total",
+      finalTotal: "Total Net Amount",
       paymentMethod: "Settlement",
       customer: "Customer Account",
       thankYou: "Thank you for shopping with us",
@@ -371,115 +368,11 @@ export default function AnalyticsTab({ lang, transactions }: AnalyticsTabProps) 
 
       {/* MODAL: Simplified Sales Receipt Inspector */}
       {selectedTx && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex justify-center items-center p-4 z-50">
-          <div className="bg-white rounded-2xl w-full max-w-sm p-6 border border-slate-100 shadow-xl animate-scale-in relative">
-            
-            {/* Interactive Receipts Design */}
-            <div className="border border-slate-200 p-4 rounded-xl space-y-4 bg-slate-50/50" id="print-receipt-container">
-              
-              {/* Receipt Header logo */}
-              <div className="text-center space-y-1">
-                <img 
-                  alt="Fenk Mahli" 
-                  className="w-12 h-12 object-contain mx-auto rounded-lg"
-                  src={fenkLogo} 
-                />
-                <h4 className="font-extrabold font-display text-xs text-slate-900 uppercase">
-                  {lang === 'ar' ? 'فاتورة مبيعات مبسطة' : 'Simplified Tax Invoice'}
-                </h4>
-                <p className="text-[10px] text-slate-400">
-                  {lang === 'ar' ? 'فينك محلي مانجر كاشير' : 'Fenk Mahli Manager POS'}
-                </p>
-              </div>
-
-              {/* Invoice Meta */}
-              <div className="text-[10px] text-slate-500 font-mono space-y-1 pt-2 border-t border-dashed border-slate-200">
-                <div className="flex justify-between">
-                  <span>Invoice ID:</span>
-                  <span className="font-bold">#{selectedTx.id.toUpperCase()}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Date:</span>
-                  <span>{new Date(selectedTx.date).toLocaleString()}</span>
-                </div>
-                {selectedTx.customerName && (
-                  <div className="flex justify-between text-amber-600 font-bold">
-                    <span>{t.customer}:</span>
-                    <span>{selectedTx.customerName}</span>
-                  </div>
-                )}
-              </div>
-
-              {/* Items grid */}
-              <table className="w-full text-[10px] pt-2 border-t border-dashed border-slate-200">
-                <thead>
-                  <tr className="border-b border-slate-200 text-slate-400 font-bold">
-                    <th className="py-1.5 text-right">{t.item}</th>
-                    <th className="py-1.5 text-center">{t.qty}</th>
-                    <th className="py-1.5 text-center">{t.price}</th>
-                    <th className="py-1.5 text-left">{t.total}</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 font-mono">
-                  {selectedTx.items.map((item, index) => (
-                    <tr key={index}>
-                      <td className="py-1.5 font-sans font-medium text-slate-800 text-right">
-                        {lang === 'ar' ? item.productNameAr : item.productNameEn}
-                      </td>
-                      <td className="py-1.5 text-center text-slate-600">{item.quantity}</td>
-                      <td className="py-1.5 text-center text-slate-600">{item.sellingPrice.toFixed(2)}</td>
-                      <td className="py-1.5 text-left font-bold text-slate-900">{(item.sellingPrice * item.quantity).toFixed(2)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-
-              {/* Totals */}
-              <div className="border-t border-dashed border-slate-200 pt-2 text-[10px] space-y-1 font-mono text-slate-600">
-                <div className="flex justify-between">
-                  <span>{t.subtotal}:</span>
-                  <span>{(selectedTx.totalAmount / 1.15).toFixed(2)} {t.currency}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>{t.vat}:</span>
-                  <span>{(selectedTx.totalAmount - (selectedTx.totalAmount / 1.15)).toFixed(2)} {t.currency}</span>
-                </div>
-                <div className="flex justify-between text-xs font-bold font-display text-slate-900 pt-1 border-t border-slate-100">
-                  <span>{t.finalTotal}:</span>
-                  <span className="text-sm font-extrabold text-[#006c49]">{selectedTx.totalAmount.toFixed(2)} {t.currency}</span>
-                </div>
-              </div>
-
-              {/* Footer payment type */}
-              <div className="border-t border-dashed border-slate-200 pt-2 text-center text-[10px] space-y-1">
-                <p className="font-semibold text-slate-800">
-                  {t.paymentMethod}: <span className="text-xs font-extrabold text-slate-900">{selectedTx.paymentMethod.toUpperCase()}</span>
-                </p>
-                <p className="text-slate-400 font-sans italic mt-1">{t.thankYou}!</p>
-              </div>
-
-            </div>
-
-            {/* Receipt Action keys */}
-            <div className="flex gap-2.5 mt-4">
-              <button 
-                type="button"
-                onClick={() => setSelectedTx(null)}
-                className="flex-1 py-2 border border-slate-200 text-slate-700 hover:bg-slate-50 font-semibold text-xs rounded-xl transition-all cursor-pointer"
-              >
-                {t.close}
-              </button>
-              <button 
-                type="button"
-                onClick={() => window.print()}
-                className="flex-1 py-2 bg-slate-950 hover:bg-slate-800 text-white font-semibold text-xs rounded-xl transition-all cursor-pointer flex justify-center items-center gap-1"
-              >
-                <span>{t.print}</span>
-              </button>
-            </div>
-
-          </div>
-        </div>
+        <InvoiceModal
+          lang={lang}
+          transaction={selectedTx}
+          onClose={() => setSelectedTx(null)}
+        />
       )}
 
     </div>

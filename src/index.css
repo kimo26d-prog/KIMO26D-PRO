@@ -125,3 +125,74 @@
 ::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
 }
+
+/* Print CSS - Optimized thermal receipt printer support (58mm & 80mm) */
+@media print {
+  @page {
+    size: auto;
+    margin: 0;
+  }
+
+  html, body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  body * {
+    visibility: hidden;
+  }
+
+  #printable-invoice-receipt,
+  #printable-invoice-receipt * {
+    visibility: visible;
+  }
+
+  #printable-invoice-receipt {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100% !important;
+    max-width: 80mm !important;
+    margin: 0 auto !important;
+    padding: 6px !important;
+    border: none !important;
+    box-shadow: none !important;
+    background: #ffffff !important;
+  }
+
+  /* Thermal Printer Narrow Mode (58mm) */
+  #printable-invoice-receipt.receipt-58mm {
+    max-width: 58mm !important;
+    font-size: 10px !important;
+    padding: 4px !important;
+  }
+
+  #printable-invoice-receipt img {
+    max-width: 48mm !important;
+    max-height: 48mm !important;
+    display: block !important;
+    margin: 0 auto !important;
+    object-fit: contain !important;
+    image-rendering: -webkit-optimize-contrast;
+    image-rendering: crisp-edges;
+  }
+
+  #printable-invoice-receipt.receipt-58mm img {
+    max-width: 36mm !important;
+    max-height: 36mm !important;
+  }
+
+  .no-print,
+  button,
+  header,
+  footer,
+  nav,
+  .backdrop-blur-sm {
+    display: none !important;
+  }
+}
+

@@ -48,7 +48,19 @@ export default function SubscribersTab({ lang }: SubscribersTabProps) {
   const [newMonthlyFee, setNewMonthlyFee] = useState('2000');
   const [newPlanMonths, setNewPlanMonths] = useState('1');
   const [newCustomCode, setNewCustomCode] = useState('');
+  const [newCustomUsername, setNewCustomUsername] = useState('');
+  const [newCustomPassword, setNewCustomPassword] = useState('');
   const [newNotes, setNewNotes] = useState('');
+
+  // Credentials display modal
+  const [credentialsModal, setCredentialsModal] = useState<{
+    shopName: string;
+    ownerName: string;
+    ownerPhone: string;
+    syncCode: string;
+    username: string;
+    password: string;
+  } | null>(null);
 
   // Form states for editing
   const [editShopName, setEditShopName] = useState('');
@@ -61,6 +73,56 @@ export default function SubscribersTab({ lang }: SubscribersTabProps) {
   // Copied code feedback state
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
 
+  // States for server & firestore subscribers
+  const [serverSubs, setServerSubs] = useState<SubscriberAccount[]>([]);
+  const [firestoreSubs, setFirestoreSubs] = useState<SubscriberAccount[]>([]);
+
+  // Helper to merge and sort subscribers from server and firestore
+  const combineAndSetSubscribers = useCallback((sSubs: SubscriberAccount[], fSubs: SubscriberAccount[]) => {
+    const map = new Map<string, SubscriberAccount>();
+    
+    // Add server subscribers first
+    sSubs.forEach(s => {
+      if (s.syncCode) map.set(s.syncCode.toUpperCase(), s);
+    });
+
+    // Add/Overwrite with Firestore subscribers
+    fSubs.forEach(s => {
+      if (s.syncCode) {
+        const key = s.syncCode.toUpperCase();
+        map.set(key, { ...map.get(key), ...s });
+      }
+    });
+
+    const combined = Array.from(map.values());
+
+    // Sort descending by subscription start date (newest first)
+    combined.sort((a, b) => {
+      const timeA = new Date(a.subscriptionStartDate || 0).getTime();
+      const timeB = new Date(b.subscriptionStartDate || 0).getTime();
+      return timeB - timeA;
+    });
+
+    setSubscribers(combined);
+
+    // Recalculate stats
+    const totalSubscribers = combined.length;
+    const activeCount = combined.filter(s => s.status === 'active').length;
+    const expiredCount = combined.filter(s => s.status === 'expired').length;
+    const suspendedCount = combined.filter(s => s.status === 'suspended').length;
+    const totalMonthlyRevenue = combined
+      .filter(s => s.status === 'active')
+      .reduce((sum, s) => sum + (s.monthlyFee || 0), 0);
+
+    setStats({
+      totalSubscribers,
+      activeCount,
+      expiredCount,
+      suspendedCount,
+      totalMonthlyRevenue
+    });
+  }, []);
+
   // Fetch subscribers from backend server
   const fetchSubscribers = useCallback(async () => {
     try {
@@ -68,11 +130,9 @@ export default function SubscribersTab({ lang }: SubscribersTabProps) {
       const res = await fetch('/api/admin/subscribers');
       if (res.ok) {
         const data = await res.json();
-        if (data.success) {
-          setSubscribers(data.subscribers || []);
-          if (data.stats) {
-            setStats(data.stats);
-          }
+        if (data.success && Array.isArray(data.subscribers)) {
+          setServerSubs(data.subscribers);
+          combineAndSetSubscribers(data.subscribers, firestoreSubs);
         }
       }
     } catch (e) {
@@ -80,7 +140,7 @@ export default function SubscribersTab({ lang }: SubscribersTabProps) {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [firestoreSubs, combineAndSetSubscribers]);
 
   useEffect(() => {
     if (!isUnlocked) return;
@@ -88,31 +148,20 @@ export default function SubscribersTab({ lang }: SubscribersTabProps) {
     fetchSubscribers();
 
     // Subscribe to Firestore for real-time subscribers updates
-    const unsubscribe = subscribeToSubscribers((remoteSubscribers) => {
-      if (remoteSubscribers && remoteSubscribers.length > 0) {
-        setSubscribers(remoteSubscribers);
-        
-        // Recalculate stats
-        const totalSubscribers = remoteSubscribers.length;
-        const activeCount = remoteSubscribers.filter(s => s.status === 'active').length;
-        const expiredCount = remoteSubscribers.filter(s => s.status === 'expired').length;
-        const suspendedCount = remoteSubscribers.filter(s => s.status === 'suspended').length;
-        const totalMonthlyRevenue = remoteSubscribers
-          .filter(s => s.status === 'active')
-          .reduce((sum, s) => sum + (s.monthlyFee || 0), 0);
-
-        setStats({
-          totalSubscribers,
-          activeCount,
-          expiredCount,
-          suspendedCount,
-          totalMonthlyRevenue
-        });
+    const unsubscribe = subscribeToSubscribers(
+      (remoteSubscribers) => {
+        if (remoteSubscribers) {
+          setFirestoreSubs(remoteSubscribers);
+          combineAndSetSubscribers(serverSubs, remoteSubscribers);
+        }
+      },
+      (err) => {
+        console.warn('Firestore subscribers subscription warning:', err);
       }
-    });
+    );
 
     return () => unsubscribe();
-  }, [isUnlocked, fetchSubscribers]);
+  }, [isUnlocked, combineAndSetSubscribers]);
 
   const showToast = (msg: string) => {
     playNotificationSound();
@@ -133,6 +182,17 @@ export default function SubscribersTab({ lang }: SubscribersTabProps) {
       playErrorSound();
       setPinError(true);
     }
+  };
+
+  // Helper to share credentials via WhatsApp
+  const handleShareCredentialsWhatsApp = (cred: { shopName: string; ownerName: string; ownerPhone: string; syncCode: string; username: string; password: string }) => {
+    const message = `مرحباً بك أستاذ ${cred.ownerName || 'التاجر'} 👋\nتم تسجيل حساب متجرك (${cred.shopName}) بنجاح!\n\n🔑 **بيانات الدخول الخاصة بك للتطبيق:**\n• **اسم المستخدم / كود المتجر:** ${cred.username || cred.syncCode}\n• **كلمة السر المسلمة:** ${cred.password}\n• **كود المزامنة:** ${cred.syncCode}\n\nيرجى فتح التطبيق واختيار [دخول بالبيانات المسلمة من المالك] وإدخال اسم المستخدم وكلمة السر أعلاه للدخول لمتجرك مباشرة.`;
+    
+    let cleanPhone = cred.ownerPhone.replace(/[^0-9]/g, '');
+    if (cleanPhone.startsWith('0')) {
+      cleanPhone = '213' + cleanPhone.substring(1);
+    }
+    window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`, '_blank');
   };
 
   // Add Subscriber
@@ -156,19 +216,55 @@ export default function SubscribersTab({ lang }: SubscribersTabProps) {
           monthlyFee: parseFloat(newMonthlyFee) || 2000,
           planMonths: parseInt(newPlanMonths) || 1,
           customCode: newCustomCode,
+          customUsername: newCustomUsername,
+          customPassword: newCustomPassword,
           notes: newNotes
         })
       });
 
       const data = await res.json();
       if (res.ok && data.success) {
-        showToast(lang === 'ar' ? 'تم تسجيل المشترك الجديد بنجاح' : 'Subscriber added successfully');
+        showToast(lang === 'ar' ? 'تم تسجيل المشترك وتوليد بيانات الدخول بنجاح!' : 'Subscriber added successfully');
         setShowAddModal(false);
+
+        const sub = data.subscriber || {};
+        const creds = {
+          shopName: sub.shopName || newShopName,
+          ownerName: sub.ownerName || newOwnerName || 'صاحب المحل',
+          ownerPhone: sub.ownerPhone || newOwnerPhone,
+          syncCode: sub.syncCode || data.credentials?.syncCode || 'FENK-STORE',
+          username: sub.username || sub.syncCode || data.credentials?.username || 'store_user',
+          password: sub.password || data.credentials?.password || '123456'
+        };
+
+        setCredentialsModal(creds);
+
+        // Save to Firestore as well
+        if (sub.syncCode) {
+          await saveSubscriberToFirestore({
+            syncCode: sub.syncCode,
+            shopName: sub.shopName,
+            ownerName: sub.ownerName,
+            ownerPhone: sub.ownerPhone,
+            wilaya: sub.wilaya || newWilaya,
+            status: 'active',
+            subscriptionStartDate: sub.subscriptionStartDate || new Date().toISOString(),
+            subscriptionEndDate: sub.subscriptionEndDate || new Date(Date.now() + 30 * 86400000).toISOString(),
+            monthlyFee: sub.monthlyFee || 2000,
+            lastPaymentDate: new Date().toISOString().split('T')[0],
+            username: creds.username,
+            password: creds.password,
+            notes: sub.notes
+          });
+        }
+
         // Reset form
         setNewShopName('');
         setNewOwnerName('');
         setNewOwnerPhone('');
         setNewCustomCode('');
+        setNewCustomUsername('');
+        setNewCustomPassword('');
         setNewNotes('');
         fetchSubscribers();
       } else {
@@ -604,7 +700,20 @@ export default function SubscribersTab({ lang }: SubscribersTabProps) {
                             {sub.shopName.charAt(0)}
                           </div>
                           <div>
-                            <p className="font-black text-slate-900 text-sm font-display">{sub.shopName}</p>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <p className="font-black text-slate-900 text-sm font-display">{sub.shopName}</p>
+                              {sub.notes?.includes('Google') && (
+                                <span className="px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-blue-100 text-blue-800 border border-blue-200/80 flex items-center gap-1">
+                                  <svg className="w-3 h-3" viewBox="0 0 24 24">
+                                    <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                                    <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                                    <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+                                    <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+                                  </svg>
+                                  <span>Google</span>
+                                </span>
+                              )}
+                            </div>
                             <div className="flex items-center gap-2 text-slate-500 mt-0.5">
                               <span>{sub.ownerName}</span>
                               <span>•</span>
@@ -683,6 +792,22 @@ export default function SubscribersTab({ lang }: SubscribersTabProps) {
                       {/* Actions */}
                       <td className="py-3.5 px-4 text-center">
                         <div className="flex items-center justify-center gap-1.5">
+                          {/* View Credentials */}
+                          <button
+                            onClick={() => setCredentialsModal({
+                              shopName: sub.shopName,
+                              ownerName: sub.ownerName,
+                              ownerPhone: sub.ownerPhone,
+                              syncCode: sub.syncCode,
+                              username: sub.username || sub.syncCode,
+                              password: sub.password || '123456'
+                            })}
+                            className="p-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-xl cursor-pointer transition-colors"
+                            title={lang === 'ar' ? 'عرض ومشاركة بيانات دخول التاجر' : 'View Credentials'}
+                          >
+                            <Key size={14} />
+                          </button>
+
                           {/* Renew Button */}
                           <button
                             onClick={() => setSelectedSubForRenew(sub)}
@@ -855,19 +980,48 @@ export default function SubscribersTab({ lang }: SubscribersTabProps) {
                 </div>
               </div>
 
-              {/* Custom Sync Code */}
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-slate-700 flex items-center justify-between">
-                  <span>{lang === 'ar' ? 'كود المزامنة المخصص (اختياري)' : 'Custom Sync Code (Optional)'}</span>
-                  <span className="text-[10px] text-slate-400 font-normal">{lang === 'ar' ? 'سيتم إنشاؤه تلقائياً إن تركته فارغاً' : 'Auto-generated if blank'}</span>
-                </label>
-                <input 
-                  type="text" 
-                  placeholder="FENK-9988-DZ"
-                  value={newCustomCode}
-                  onChange={(e) => setNewCustomCode(e.target.value)}
-                  className="w-full p-2.5 text-sm font-mono uppercase rounded-xl border border-slate-200 bg-slate-50 focus:outline-none focus:border-slate-900"
-                />
+              {/* Custom Sync Code, Username, and Password */}
+              <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl space-y-3">
+                <p className="text-xs font-black text-slate-800 flex items-center gap-1.5 font-display">
+                  <Key size={14} className="text-emerald-600" />
+                  <span>{lang === 'ar' ? 'بيانات دخول التاجر المخصصة (توليد تلقائي بضغطة زر)' : 'Merchant Assigned Credentials'}</span>
+                </p>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-bold text-slate-700 block">
+                      {lang === 'ar' ? 'اسم المستخدم / كود المزامنة' : 'Username / Sync Code'}
+                    </label>
+                    <input 
+                      type="text" 
+                      placeholder="FENK-8921-DZ"
+                      value={newCustomCode}
+                      onChange={(e) => {
+                        setNewCustomCode(e.target.value);
+                        if (!newCustomUsername) setNewCustomUsername(e.target.value);
+                      }}
+                      className="w-full p-2.5 text-xs font-mono uppercase rounded-xl border border-slate-200 bg-white focus:outline-none focus:border-slate-900"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-bold text-slate-700 block">
+                      {lang === 'ar' ? 'كلمة السر المسلمة للتاجر' : 'Assigned Password'}
+                    </label>
+                    <input 
+                      type="text" 
+                      placeholder="توليد تلقائي (مثال: 849201)"
+                      value={newCustomPassword}
+                      onChange={(e) => setNewCustomPassword(e.target.value)}
+                      className="w-full p-2.5 text-xs font-mono rounded-xl border border-slate-200 bg-white focus:outline-none focus:border-slate-900"
+                    />
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-500 leading-relaxed">
+                  {lang === 'ar' 
+                    ? '💡 إن تركتها فارغة، سيقوم التطبيق بإنشاء اسم مستخدم وكلمة سر مكونة من 6 أرقام عشوائياً وتزويدك ببطاقة إرسالها للتاجر عبر الواتساب.' 
+                    : 'If left blank, auto-generates 6-digit PIN and code for merchant login.'}
+                </p>
               </div>
 
               {/* Notes */}
@@ -1102,6 +1256,85 @@ export default function SubscribersTab({ lang }: SubscribersTabProps) {
                 className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white font-black text-xs font-display rounded-xl transition-all shadow-md active:scale-95 cursor-pointer"
               >
                 {lang === 'ar' ? 'تأكيد الحذف النهائي' : 'Confirm Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ================= MODAL 5: MERCHANT CREDENTIALS DISPLAY ================= */}
+      {credentialsModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-5 animate-in fade-in zoom-in duration-150">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="p-2.5 bg-emerald-100 text-emerald-800 rounded-2xl font-bold">
+                  <Key size={22} />
+                </div>
+                <div>
+                  <h3 className="text-base font-black font-display text-slate-900">
+                    {lang === 'ar' ? 'بطاقة بيانات دخول التاجر' : 'Merchant Login Credentials'}
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    {credentialsModal.shopName} ({credentialsModal.ownerName})
+                  </p>
+                </div>
+              </div>
+              <button onClick={() => setCredentialsModal(null)} className="p-2 text-slate-400 hover:text-slate-600 cursor-pointer">✕</button>
+            </div>
+
+            <div className="bg-slate-900 text-white rounded-2xl p-4 space-y-3 shadow-inner">
+              <div className="flex justify-between items-center border-b border-slate-800 pb-2">
+                <span className="text-xs text-slate-400">{lang === 'ar' ? 'اسم المتجر:' : 'Shop Name:'}</span>
+                <span className="font-extrabold text-sm text-emerald-400">{credentialsModal.shopName}</span>
+              </div>
+
+              <div className="flex justify-between items-center border-b border-slate-800 pb-2">
+                <span className="text-xs text-slate-400">{lang === 'ar' ? 'اسم المستخدم / الكود:' : 'Username / Code:'}</span>
+                <span className="font-mono font-black text-sm text-yellow-300 bg-slate-800 px-2.5 py-1 rounded-lg">
+                  {credentialsModal.username || credentialsModal.syncCode}
+                </span>
+              </div>
+
+              <div className="flex justify-between items-center border-b border-slate-800 pb-2">
+                <span className="text-xs text-slate-400">{lang === 'ar' ? 'كلمة السر المسلمة:' : 'Password:'}</span>
+                <span className="font-mono font-black text-base text-emerald-300 bg-slate-800 px-2.5 py-1 rounded-lg tracking-wider">
+                  {credentialsModal.password}
+                </span>
+              </div>
+
+              <div className="flex justify-between items-center">
+                <span className="text-xs text-slate-400">{lang === 'ar' ? 'كود المزامنة:' : 'Sync Code:'}</span>
+                <span className="font-mono text-xs text-slate-300">{credentialsModal.syncCode}</span>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-600 leading-relaxed bg-amber-50 p-3 rounded-xl border border-amber-200">
+              {lang === 'ar' 
+                ? '📌 يستطيع التاجر الدخول للتطبيق بفتح صفحة الدخول، واختيار [الدخول ببيانات المالك] ثم إدخال اسم المستخدم وكلمة السر الموضحة أعلاه.'
+                : 'Merchant logs in via [Owner Credentials] option on Login screen using these exact details.'}
+            </p>
+
+            <div className="flex flex-col gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => handleShareCredentialsWhatsApp(credentialsModal)}
+                className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs font-display rounded-2xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-95"
+              >
+                <span>إرسال ومشاركة مع التاجر عبر الواتساب 💬</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const text = `اسم المتجر: ${credentialsModal.shopName}\nاسم المستخدم: ${credentialsModal.username || credentialsModal.syncCode}\nكلمة السر: ${credentialsModal.password}\nكود المزامنة: ${credentialsModal.syncCode}`;
+                  navigator.clipboard.writeText(text);
+                  showToast(lang === 'ar' ? 'تم نسخ بيانات الدخول للحافظة' : 'Copied credentials to clipboard');
+                }}
+                className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs rounded-2xl transition-all flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <Copy size={15} />
+                <span>نسخ البيانات للحافظة</span>
               </button>
             </div>
           </div>

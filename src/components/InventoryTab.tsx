@@ -1,26 +1,31 @@
-import React, { useState } from 'react';
-import { Language, Product } from '../types';
+import React, { useState, useMemo } from 'react';
+import { Language, Product, SHOP_TYPES, CATEGORY_PRESETS_BY_SHOP_TYPE, CategoryOption } from '../types';
 import { CATEGORIES } from '../data';
-import { Search, Plus, Filter, AlertTriangle, Edit2, Trash2, RefreshCw, Layers, Camera, CheckCircle2 } from 'lucide-react';
+import { Search, Plus, Filter, AlertTriangle, Edit2, Trash2, RefreshCw, Layers, Camera, CheckCircle2, Sparkles, Tag, PlusCircle, X } from 'lucide-react';
 import BarcodeScannerModal from './BarcodeScannerModal';
 import { playBeepSound, playSuccessSound, playErrorSound, playClickSound } from '../utils/audio';
 
 interface InventoryTabProps {
   lang: Language;
+  shopType?: string;
   products: Product[];
   onAddProduct: (product: Product) => void;
   onUpdateProduct: (product: Product) => void;
   onDeleteProduct: (productId: string) => void;
   initialFilter?: string; // e.g. 'low-stock'
+  onOpenAIOrganizer?: () => void;
 }
 
-export default function InventoryTab({ lang, products, onAddProduct, onUpdateProduct, onDeleteProduct, initialFilter = '' }: InventoryTabProps) {
+export default function InventoryTab({ lang, shopType = 'grocery', products, onAddProduct, onUpdateProduct, onDeleteProduct, initialFilter = '', onOpenAIOrganizer }: InventoryTabProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [stockStatus, setStockStatus] = useState(initialFilter || 'all');
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+
+  // Active shop type preset state for category selection in modals
+  const [modalShopType, setModalShopType] = useState<string>(shopType || 'grocery');
 
   // Camera Barcode Scanner State
   const [scannerTarget, setScannerTarget] = useState<'search' | 'form' | null>(null);
@@ -34,21 +39,100 @@ export default function InventoryTab({ lang, products, onAddProduct, onUpdatePro
     }
     setScannerTarget(null);
   };
-  // Form states for adding product
+
+  // Form states for adding/editing product
   const [barcode, setBarcode] = useState('');
   const [nameAr, setNameAr] = useState('');
   const [nameEn, setNameEn] = useState('');
-  const [category, setCategory] = useState('groceries');
+  
+  // Category Form State
+  const [categoryAr, setCategoryAr] = useState<string>('مواد غذائية');
+  const [categoryEn, setCategoryEn] = useState<string>('Groceries');
+  const [isCustomCategory, setIsCustomCategory] = useState<boolean>(false);
+  const [customCategoryInputAr, setCustomCategoryInputAr] = useState<string>('');
+  const [customCategoryInputEn, setCustomCategoryInputEn] = useState<string>('');
+
   const [buyingPrice, setBuyingPrice] = useState('0.00');
   const [sellingPrice, setSellingPrice] = useState('0.00');
   const [quantity, setQuantity] = useState('0');
   const [minQuantity, setMinQuantity] = useState('5');
 
+  // Current shop type's category presets
+  const currentActivityPresets = useMemo(() => {
+    return CATEGORY_PRESETS_BY_SHOP_TYPE[modalShopType] || CATEGORY_PRESETS_BY_SHOP_TYPE.grocery;
+  }, [modalShopType]);
+
+  // Dynamic filter categories merged from all shop presets + unique categories in existing products
+  const filterCategories = useMemo(() => {
+    const list: { id: string; ar: string; en: string }[] = [
+      { id: 'all', ar: lang === 'ar' ? 'جميع التصنيفات' : 'All Categories', en: 'All Categories' }
+    ];
+
+    // 1. Current active presets
+    currentActivityPresets.forEach(cp => {
+      if (!list.some(item => item.ar === cp.ar)) {
+        list.push({ id: cp.id, ar: cp.ar, en: cp.en });
+      }
+    });
+
+    // 2. Unique categories from user products
+    products.forEach(p => {
+      if (p.categoryAr && !list.some(item => item.ar === p.categoryAr)) {
+        list.push({ id: `cat_prod_${p.categoryAr}`, ar: p.categoryAr, en: p.categoryEn || p.categoryAr });
+      }
+    });
+
+    // 3. Other shop type presets
+    Object.values(CATEGORY_PRESETS_BY_SHOP_TYPE).forEach(presetArr => {
+      presetArr.forEach(c => {
+        if (!list.some(item => item.ar === c.ar)) {
+          list.push({ id: c.id, ar: c.ar, en: c.en });
+        }
+      });
+    });
+
+    return list;
+  }, [currentActivityPresets, products, lang]);
+
+  // Unified single category option list for modals (خانة واحدة)
+  const combinedCategoryOptions = useMemo(() => {
+    const list: { ar: string; en: string }[] = [];
+    const added = new Set<string>();
+
+    // 1. Current active activity presets
+    currentActivityPresets.forEach(cp => {
+      if (!added.has(cp.ar)) {
+        added.add(cp.ar);
+        list.push({ ar: cp.ar, en: cp.en });
+      }
+    });
+
+    // 2. Presets from all shop activities
+    Object.values(CATEGORY_PRESETS_BY_SHOP_TYPE).forEach(presetArr => {
+      presetArr.forEach(c => {
+        if (!added.has(c.ar)) {
+          added.add(c.ar);
+          list.push({ ar: c.ar, en: c.en });
+        }
+      });
+    });
+
+    // 3. User's existing custom product categories
+    products.forEach(p => {
+      if (p.categoryAr && !added.has(p.categoryAr)) {
+        added.add(p.categoryAr);
+        list.push({ ar: p.categoryAr, en: p.categoryEn || p.categoryAr });
+      }
+    });
+
+    return list;
+  }, [currentActivityPresets, products]);
+
   const translations = {
     ar: {
       searchPlaceholder: "البحث بالاسم أو الباركود...",
       addBtn: "إضافة سلعة جديدة",
-      categoryLabel: "التصنيف",
+      categoryLabel: "التصنيف / الفئة",
       statusLabel: "حالة المخزون",
       statusAll: "الكل",
       statusLow: "منخفض المخزون",
@@ -80,7 +164,7 @@ export default function InventoryTab({ lang, products, onAddProduct, onUpdatePro
     en: {
       searchPlaceholder: "Search by barcode or product name...",
       addBtn: "Add New Product",
-      categoryLabel: "Category",
+      categoryLabel: "Category / Activity",
       statusLabel: "Stock Status",
       statusAll: "All Stocks",
       statusLow: "Low Stock Alert",
@@ -127,11 +211,13 @@ export default function InventoryTab({ lang, products, onAddProduct, onUpdatePro
                           p.nameAr.toLowerCase().includes(query) || 
                           p.nameEn.toLowerCase().includes(query);
     
-    // Category filter mapping
-    const catObj = CATEGORIES.find(c => c.id === selectedCategory);
-    const matchesCategory = selectedCategory === 'all' || 
-                            p.categoryAr === catObj?.ar || 
-                            p.categoryEn === catObj?.en;
+    // Category filter matching
+    let matchesCategory = true;
+    if (selectedCategory !== 'all') {
+      const selectedObj = filterCategories.find(c => c.id === selectedCategory);
+      const targetAr = selectedObj ? selectedObj.ar : selectedCategory;
+      matchesCategory = p.categoryAr === targetAr || p.categoryEn === targetAr;
+    }
     
     // Stock status mapping
     let matchesStatus = true;
@@ -149,6 +235,28 @@ export default function InventoryTab({ lang, products, onAddProduct, onUpdatePro
   // Calculate sum assets valuation of these products
   const totalAssetsValue = products.reduce((sum, p) => sum + (p.quantity * p.sellingPrice), 0);
 
+  // Helper to open Add Product Modal initialized with current shop type categories
+  const openAddModal = () => {
+    playClickSound();
+    setModalShopType(shopType || 'grocery');
+    const defaultPresets = CATEGORY_PRESETS_BY_SHOP_TYPE[shopType || 'grocery'] || CATEGORY_PRESETS_BY_SHOP_TYPE.grocery;
+    setCategoryAr(defaultPresets[0].ar);
+    setCategoryEn(defaultPresets[0].en);
+    setIsCustomCategory(false);
+    setCustomCategoryInputAr('');
+    setCustomCategoryInputEn('');
+
+    setBarcode('');
+    setNameAr('');
+    setNameEn('');
+    setBuyingPrice('0.00');
+    setSellingPrice('0.00');
+    setQuantity('0');
+    setMinQuantity('5');
+    handleGenerateBarcode();
+    setShowAddModal(true);
+  };
+
   const handleAddSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const bPrice = parseFloat(buyingPrice);
@@ -162,16 +270,22 @@ export default function InventoryTab({ lang, products, onAddProduct, onUpdatePro
       return;
     }
 
-    // Category mapping to text
-    const matchedCategory = CATEGORIES.find(c => c.id === category) || CATEGORIES[1];
+    // Determine final category text
+    let finalCatAr = categoryAr;
+    let finalCatEn = categoryEn;
+
+    if (isCustomCategory) {
+      finalCatAr = customCategoryInputAr.trim() || (lang === 'ar' ? 'عام' : 'General');
+      finalCatEn = customCategoryInputEn.trim() || finalCatAr;
+    }
 
     const newProduct: Product = {
       id: 'prod-' + Date.now(),
       barcode: barcode.trim() || 'NO-BARCODE',
       nameAr: nameAr.trim(),
       nameEn: nameEn.trim(),
-      categoryAr: matchedCategory.ar,
-      categoryEn: matchedCategory.en,
+      categoryAr: finalCatAr,
+      categoryEn: finalCatEn,
       buyingPrice: bPrice,
       sellingPrice: sPrice,
       quantity: qtyNum,
@@ -185,7 +299,6 @@ export default function InventoryTab({ lang, products, onAddProduct, onUpdatePro
     setBarcode('');
     setNameAr('');
     setNameEn('');
-    setCategory('groceries');
     setBuyingPrice('0.00');
     setSellingPrice('0.00');
     setQuantity('0');
@@ -198,8 +311,22 @@ export default function InventoryTab({ lang, products, onAddProduct, onUpdatePro
     setBarcode(product.barcode);
     setNameAr(product.nameAr);
     setNameEn(product.nameEn);
-    const catKey = CATEGORIES.find(c => c.ar === product.categoryAr)?.id || 'groceries';
-    setCategory(catKey);
+    
+    // Set category states
+    setModalShopType(shopType || 'grocery');
+    setCategoryAr(product.categoryAr);
+    setCategoryEn(product.categoryEn);
+    
+    // Check if it's custom or preset
+    const matchedPreset = currentActivityPresets.find(cp => cp.ar === product.categoryAr);
+    if (!matchedPreset) {
+      setIsCustomCategory(true);
+      setCustomCategoryInputAr(product.categoryAr);
+      setCustomCategoryInputEn(product.categoryEn);
+    } else {
+      setIsCustomCategory(false);
+    }
+
     setBuyingPrice(product.buyingPrice.toFixed(2));
     setSellingPrice(product.sellingPrice.toFixed(2));
     setQuantity(product.quantity.toString());
@@ -222,15 +349,21 @@ export default function InventoryTab({ lang, products, onAddProduct, onUpdatePro
       return;
     }
 
-    const matchedCategory = CATEGORIES.find(c => c.id === category) || CATEGORIES[1];
+    let finalCatAr = categoryAr;
+    let finalCatEn = categoryEn;
+
+    if (isCustomCategory) {
+      finalCatAr = customCategoryInputAr.trim() || (lang === 'ar' ? 'عام' : 'General');
+      finalCatEn = customCategoryInputEn.trim() || finalCatAr;
+    }
 
     const updatedProduct: Product = {
       ...editingProduct,
       barcode: barcode.trim(),
       nameAr: nameAr.trim(),
       nameEn: nameEn.trim(),
-      categoryAr: matchedCategory.ar,
-      categoryEn: matchedCategory.en,
+      categoryAr: finalCatAr,
+      categoryEn: finalCatEn,
       buyingPrice: bPrice,
       sellingPrice: sPrice,
       quantity: qtyNum,
@@ -260,16 +393,24 @@ export default function InventoryTab({ lang, products, onAddProduct, onUpdatePro
             {totalAssetsValue.toFixed(2)} <span className="text-sm font-semibold text-slate-400 font-sans">{t.currency}</span>
           </h2>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
           <div className="px-4 py-2 bg-white/10 rounded-xl text-xs font-semibold">
             {products.length} {t.activeItems}
           </div>
+          {onOpenAIOrganizer && (
+            <button
+              type="button"
+              onClick={onOpenAIOrganizer}
+              className="px-3.5 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black font-display text-xs rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shadow-sm border border-emerald-400/40"
+              title={lang === 'ar' ? 'منظم المتجر الذكي بالذكاء الاصطناعي' : 'AI Store Organizer'}
+            >
+              <Sparkles size={15} className="animate-pulse" />
+              <span>{lang === 'ar' ? 'مُنظّم المتجر (AI)' : 'AI Organizer'}</span>
+            </button>
+          )}
           <button 
-            onClick={() => {
-              handleGenerateBarcode();
-              setShowAddModal(true);
-            }}
-            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold font-display text-xs rounded-xl transition-all cursor-pointer flex items-center gap-1.5"
+            onClick={openAddModal}
+            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold font-display text-xs rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shadow-sm"
           >
             <Plus size={15} />
             <span>{t.addBtn}</span>
@@ -312,9 +453,9 @@ export default function InventoryTab({ lang, products, onAddProduct, onUpdatePro
             <select
               value={selectedCategory}
               onChange={(e) => setSelectedCategory(e.target.value)}
-              className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm bg-slate-50 focus:outline-none"
+              className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm bg-slate-50 focus:outline-none font-bold text-slate-800"
             >
-              {CATEGORIES.map(cat => (
+              {filterCategories.map(cat => (
                 <option key={cat.id} value={cat.id}>
                   {lang === 'ar' ? cat.ar : cat.en}
                 </option>
@@ -426,9 +567,27 @@ export default function InventoryTab({ lang, products, onAddProduct, onUpdatePro
 
               {filteredProducts.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="py-12 text-center text-slate-400">
-                    <Layers className="mx-auto text-slate-200 mb-2" size={32} />
-                    <span>No products found matching filters.</span>
+                  <td colSpan={8} className="py-16 text-center">
+                    <div className="max-w-md mx-auto space-y-3">
+                      <div className="w-12 h-12 rounded-2xl bg-slate-100 text-[#006c49] flex items-center justify-center mx-auto shadow-inner">
+                        <Layers size={24} />
+                      </div>
+                      <p className="text-sm font-bold text-slate-800 font-display">
+                        {lang === 'ar' ? 'لا توجد منتجات في قائمة المخزون حالياً' : 'No products in inventory yet'}
+                      </p>
+                      <p className="text-xs text-slate-500 max-w-sm mx-auto leading-relaxed">
+                        {lang === 'ar' 
+                          ? 'ابدأ بتسجيل سلع متجرك الحقيقية بالضغط على زر "إضافة منتج جديد" أو استخدام ماسح الباركود.' 
+                          : 'Start registering your store items by clicking "Add New Product" or using the barcode scanner.'}
+                      </p>
+                      <button
+                        onClick={openAddModal}
+                        className="mt-2 px-4 py-2 bg-[#006c49] hover:bg-[#005237] text-white text-xs font-bold rounded-xl transition-all inline-flex items-center gap-2 shadow-xs cursor-pointer"
+                      >
+                        <Plus size={14} />
+                        <span>{t.addBtn}</span>
+                      </button>
+                    </div>
                   </td>
                 </tr>
               )}
@@ -439,44 +598,53 @@ export default function InventoryTab({ lang, products, onAddProduct, onUpdatePro
 
       {/* 4. Add Inventory Item Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex justify-center items-center p-4 z-50">
-          <div className="bg-white rounded-2xl w-full max-w-lg p-6 border border-slate-100 shadow-xl animate-scale-in">
-            <h3 className="text-base font-bold text-slate-950 font-display flex items-center gap-2">
-              <Plus className="text-emerald-600" size={20} />
-              <span>{t.addTitle}</span>
-            </h3>
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex justify-center items-center p-3 sm:p-4 z-50">
+          <div className="bg-white rounded-2xl w-full max-w-md max-h-[92vh] overflow-y-auto p-4 sm:p-5 border border-slate-100 shadow-xl animate-scale-in">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
+              <h3 className="text-sm sm:text-base font-bold text-slate-950 font-display flex items-center gap-2">
+                <Plus className="text-emerald-600" size={18} />
+                <span>{t.addTitle}</span>
+              </h3>
+              <button 
+                type="button"
+                onClick={() => setShowAddModal(false)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
             
-            <form onSubmit={handleAddSubmit} className="mt-4 space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <form onSubmit={handleAddSubmit} className="mt-3 space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-3">
                 
                 {/* Barcode */}
                 <div className="space-y-1 sm:col-span-2">
-                  <label className="text-xs font-semibold text-slate-700 block">
+                  <label className="text-[11px] font-bold text-slate-700 block">
                     {t.thBarcode}
                   </label>
-                  <div className="flex gap-2">
+                  <div className="flex gap-1.5">
                     <input 
                       type="text" 
                       required
                       value={barcode}
                       onChange={(e) => setBarcode(e.target.value)}
-                      className="flex-1 px-3 py-2 rounded-xl border border-slate-200 text-sm font-mono bg-slate-50 focus:outline-none"
+                      className="flex-1 px-2.5 py-1.5 rounded-xl border border-slate-200 text-xs sm:text-sm font-mono bg-slate-50 focus:outline-none focus:ring-1 focus:ring-emerald-600"
                     />
                     <button 
                       type="button"
                       onClick={() => setScannerTarget('form')}
-                      className="px-3 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold font-display flex items-center gap-1 cursor-pointer"
+                      className="px-2.5 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold font-display flex items-center gap-1 cursor-pointer shrink-0"
                       title={lang === 'ar' ? 'مسح باركود المنتج بالكاميرا' : 'Scan barcode with camera'}
                     >
-                      <Camera size={14} />
-                      <span className="hidden sm:inline">{lang === 'ar' ? 'الكاميرا' : 'Scan'}</span>
+                      <Camera size={13} />
+                      <span className="text-[11px]">{lang === 'ar' ? 'كاميرا' : 'Scan'}</span>
                     </button>
                     <button 
                       type="button"
                       onClick={handleGenerateBarcode}
-                      className="px-3 py-2 bg-slate-100 text-slate-700 hover:bg-slate-200 rounded-xl text-xs font-semibold font-display flex items-center gap-1 cursor-pointer"
+                      className="px-2.5 py-1.5 bg-slate-100 text-slate-700 hover:bg-slate-200 rounded-xl text-[11px] font-semibold font-display flex items-center gap-1 cursor-pointer shrink-0"
                     >
-                      <RefreshCw size={13} />
+                      <RefreshCw size={12} />
                       <span>{t.generateBarcode}</span>
                     </button>
                   </div>
@@ -484,55 +652,107 @@ export default function InventoryTab({ lang, products, onAddProduct, onUpdatePro
 
                 {/* Name Arabic */}
                 <div className="space-y-1">
-                  <label className="text-xs font-semibold text-slate-700 block">
+                  <label className="text-[11px] font-bold text-slate-700 block">
                     {t.labelAr} <span className="text-red-500">*</span>
                   </label>
                   <input 
                     type="text" 
                     required
-                    placeholder="مثال: شوكولاتة كادبوري 90 جرام"
+                    placeholder="مثال: شوكولاتة كادبوري"
                     value={nameAr}
                     onChange={(e) => setNameAr(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm text-right bg-slate-50 focus:outline-none"
+                    className="w-full px-2.5 py-1.5 rounded-xl border border-slate-200 text-xs text-right bg-slate-50 focus:outline-none focus:ring-1 focus:ring-emerald-600 font-semibold"
                   />
                 </div>
 
                 {/* Name English */}
                 <div className="space-y-1">
-                  <label className="text-xs font-semibold text-slate-700 block">
+                  <label className="text-[11px] font-bold text-slate-700 block">
                     {t.labelEn} <span className="text-red-500">*</span>
                   </label>
                   <input 
                     type="text" 
                     required
-                    placeholder="e.g. Cadbury Chocolate 90g"
+                    placeholder="e.g. Cadbury Chocolate"
                     value={nameEn}
                     onChange={(e) => setNameEn(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm text-left bg-slate-50 focus:outline-none"
+                    className="w-full px-2.5 py-1.5 rounded-xl border border-slate-200 text-xs text-left bg-slate-50 focus:outline-none focus:ring-1 focus:ring-emerald-600 font-semibold"
                   />
                 </div>
 
-                {/* Category Selection */}
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold text-slate-700 block">
-                    {t.categoryLabel}
-                  </label>
-                  <select 
-                    value={category}
-                    onChange={(e) => setCategory(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm bg-slate-50 focus:outline-none"
-                  >
-                    {CATEGORIES.filter(c => c.id !== 'all').map(cat => (
-                      <option key={cat.id} value={cat.id}>
-                        {lang === 'ar' ? cat.ar : cat.en}
+                {/* Unified Single Category Field */}
+                <div className="space-y-1 sm:col-span-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[11px] font-bold text-slate-800 flex items-center gap-1">
+                      <Tag size={13} className="text-[#006c49]" />
+                      <span>{t.categoryLabel}</span>
+                    </label>
+                    {isCustomCategory && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsCustomCategory(false);
+                          if (combinedCategoryOptions.length > 0) {
+                            setCategoryAr(combinedCategoryOptions[0].ar);
+                            setCategoryEn(combinedCategoryOptions[0].en);
+                          }
+                        }}
+                        className="text-[10px] text-[#006c49] hover:underline font-bold cursor-pointer"
+                      >
+                        {lang === 'ar' ? '← العودة للقائمة' : '← Back to List'}
+                      </button>
+                    )}
+                  </div>
+
+                  {!isCustomCategory ? (
+                    <select
+                      value={categoryAr}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === '__CUSTOM__') {
+                          setIsCustomCategory(true);
+                          setCustomCategoryInputAr('');
+                          setCustomCategoryInputEn('');
+                        } else {
+                          const matched = combinedCategoryOptions.find(c => c.ar === val);
+                          if (matched) {
+                            setCategoryAr(matched.ar);
+                            setCategoryEn(matched.en);
+                          }
+                        }
+                      }}
+                      className="w-full px-2.5 py-2 rounded-xl border border-slate-200 text-xs bg-slate-50 focus:outline-none focus:ring-1 focus:ring-[#006c49] font-bold text-slate-800 cursor-pointer"
+                    >
+                      {combinedCategoryOptions.map((catOption) => (
+                        <option key={catOption.ar} value={catOption.ar}>
+                          {lang === 'ar' ? catOption.ar : catOption.en}
+                        </option>
+                      ))}
+                      <option value="__CUSTOM__" className="font-bold text-amber-700 bg-amber-50">
+                        {lang === 'ar' ? '+ كتابة تصنيف جديد / مخصص...' : '+ Enter Custom Category...'}
                       </option>
-                    ))}
-                  </select>
+                    </select>
+                  ) : (
+                    <div className="space-y-1 animate-fade-in">
+                      <input
+                        type="text"
+                        required
+                        autoFocus
+                        placeholder={lang === 'ar' ? 'أدخل اسم التصنيف الجديد...' : 'Enter new category name...'}
+                        value={customCategoryInputAr}
+                        onChange={(e) => {
+                          setCustomCategoryInputAr(e.target.value);
+                          setCustomCategoryInputEn(e.target.value);
+                        }}
+                        className="w-full px-2.5 py-1.5 rounded-xl border border-amber-300 text-xs bg-amber-50/70 focus:outline-none focus:ring-1 focus:ring-amber-500 font-bold text-slate-800"
+                      />
+                    </div>
+                  )}
                 </div>
 
                 {/* Qty */}
                 <div className="space-y-1">
-                  <label className="text-xs font-semibold text-slate-700 block">
+                  <label className="text-[11px] font-bold text-slate-700 block">
                     {t.thQty}
                   </label>
                   <input 
@@ -540,13 +760,27 @@ export default function InventoryTab({ lang, products, onAddProduct, onUpdatePro
                     min="0"
                     value={quantity}
                     onChange={(e) => setQuantity(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm bg-slate-50 focus:outline-none"
+                    className="w-full px-2.5 py-1.5 rounded-xl border border-slate-200 text-xs bg-slate-50 focus:outline-none focus:ring-1 focus:ring-emerald-600 font-semibold"
+                  />
+                </div>
+
+                {/* Min stock warning */}
+                <div className="space-y-1">
+                  <label className="text-[11px] font-bold text-slate-700 block">
+                    {t.labelMinQty}
+                  </label>
+                  <input 
+                    type="number" 
+                    min="1"
+                    value={minQuantity}
+                    onChange={(e) => setMinQuantity(e.target.value)}
+                    className="w-full px-2.5 py-1.5 rounded-xl border border-slate-200 text-xs bg-slate-50 focus:outline-none focus:ring-1 focus:ring-emerald-600 font-semibold"
                   />
                 </div>
 
                 {/* Buying price */}
                 <div className="space-y-1">
-                  <label className="text-xs font-semibold text-slate-700 block">
+                  <label className="text-[11px] font-bold text-slate-700 block">
                     {t.thPriceBuy} ({t.currency})
                   </label>
                   <input 
@@ -555,13 +789,13 @@ export default function InventoryTab({ lang, products, onAddProduct, onUpdatePro
                     min="0"
                     value={buyingPrice}
                     onChange={(e) => setBuyingPrice(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm bg-slate-50 focus:outline-none"
+                    className="w-full px-2.5 py-1.5 rounded-xl border border-slate-200 text-xs bg-slate-50 focus:outline-none focus:ring-1 focus:ring-emerald-600 font-semibold"
                   />
                 </div>
 
                 {/* Selling price */}
                 <div className="space-y-1">
-                  <label className="text-xs font-semibold text-slate-700 block">
+                  <label className="text-[11px] font-bold text-slate-700 block">
                     {t.thPriceSell} ({t.currency})
                   </label>
                   <input 
@@ -570,37 +804,23 @@ export default function InventoryTab({ lang, products, onAddProduct, onUpdatePro
                     min="0"
                     value={sellingPrice}
                     onChange={(e) => setSellingPrice(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm bg-slate-50 focus:outline-none"
-                  />
-                </div>
-
-                {/* Min stock for warnings */}
-                <div className="space-y-1 sm:col-span-2">
-                  <label className="text-xs font-semibold text-slate-700 block">
-                    {t.labelMinQty}
-                  </label>
-                  <input 
-                    type="number" 
-                    min="1"
-                    value={minQuantity}
-                    onChange={(e) => setMinQuantity(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm bg-slate-50 focus:outline-none"
+                    className="w-full px-2.5 py-1.5 rounded-xl border border-slate-200 text-xs bg-slate-50 focus:outline-none focus:ring-1 focus:ring-emerald-600 font-bold"
                   />
                 </div>
 
               </div>
 
-              <div className="flex gap-2.5 pt-4">
+              <div className="flex gap-2 pt-2 border-t border-slate-100 mt-2">
                 <button 
                   type="button"
                   onClick={() => setShowAddModal(false)}
-                  className="flex-1 py-2.5 border border-slate-200 text-slate-700 hover:bg-slate-50 font-semibold text-xs rounded-xl transition-all cursor-pointer"
+                  className="flex-1 py-2 border border-slate-200 text-slate-700 hover:bg-slate-50 font-bold text-xs rounded-xl transition-all cursor-pointer"
                 >
                   {t.cancel}
                 </button>
                 <button 
                   type="submit"
-                  className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs rounded-xl transition-all cursor-pointer"
+                  className="flex-1 py-2 bg-[#006c49] hover:bg-[#005237] text-white font-bold text-xs rounded-xl transition-all cursor-pointer shadow-xs"
                 >
                   {t.addSubmit}
                 </button>
@@ -612,34 +832,113 @@ export default function InventoryTab({ lang, products, onAddProduct, onUpdatePro
 
       {/* 5. Edit Inventory Item Modal */}
       {showEditModal && editingProduct && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex justify-center items-center p-4 z-50">
-          <div className="bg-white rounded-2xl w-full max-w-lg p-6 border border-slate-100 shadow-xl animate-scale-in">
-            <h3 className="text-base font-bold text-slate-950 font-display flex items-center gap-2">
-              <Edit2 className="text-[#006c49]" size={18} />
-              <span>{t.editTitle}</span>
-            </h3>
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex justify-center items-center p-3 sm:p-4 z-50">
+          <div className="bg-white rounded-2xl w-full max-w-md max-h-[92vh] overflow-y-auto p-4 sm:p-5 border border-slate-100 shadow-xl animate-scale-in">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
+              <h3 className="text-sm sm:text-base font-bold text-slate-950 font-display flex items-center gap-2">
+                <Edit2 className="text-[#006c49]" size={18} />
+                <span>{t.editTitle}</span>
+              </h3>
+              <button 
+                type="button"
+                onClick={() => setShowEditModal(false)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
             
-            <form onSubmit={handleEditSubmit} className="mt-4 space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <form onSubmit={handleEditSubmit} className="mt-3 space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-3">
                 
                 {/* Product Name label info static */}
-                <div className="sm:col-span-2 p-3 bg-slate-50 rounded-xl border border-slate-100 flex justify-between items-center text-xs">
+                <div className="sm:col-span-2 p-2.5 bg-slate-50 rounded-xl border border-slate-200/80 flex justify-between items-center text-xs">
                   <span className="font-bold font-display text-slate-800">
                     {lang === 'ar' ? editingProduct.nameAr : editingProduct.nameEn}
                   </span>
-                  <span className="font-mono text-slate-400">{editingProduct.barcode}</span>
+                  <span className="font-mono text-slate-500 font-bold bg-white px-2 py-0.5 rounded border border-slate-200">{editingProduct.barcode}</span>
+                </div>
+
+                {/* Unified Single Category Field */}
+                <div className="space-y-1 sm:col-span-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[11px] font-bold text-slate-800 flex items-center gap-1">
+                      <Tag size={13} className="text-[#006c49]" />
+                      <span>{t.categoryLabel}</span>
+                    </label>
+                    {isCustomCategory && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsCustomCategory(false);
+                          if (combinedCategoryOptions.length > 0) {
+                            setCategoryAr(combinedCategoryOptions[0].ar);
+                            setCategoryEn(combinedCategoryOptions[0].en);
+                          }
+                        }}
+                        className="text-[10px] text-[#006c49] hover:underline font-bold cursor-pointer"
+                      >
+                        {lang === 'ar' ? '← العودة للقائمة' : '← Back to List'}
+                      </button>
+                    )}
+                  </div>
+
+                  {!isCustomCategory ? (
+                    <select
+                      value={categoryAr}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === '__CUSTOM__') {
+                          setIsCustomCategory(true);
+                          setCustomCategoryInputAr('');
+                          setCustomCategoryInputEn('');
+                        } else {
+                          const matched = combinedCategoryOptions.find(c => c.ar === val);
+                          if (matched) {
+                            setCategoryAr(matched.ar);
+                            setCategoryEn(matched.en);
+                          }
+                        }
+                      }}
+                      className="w-full px-2.5 py-2 rounded-xl border border-slate-200 text-xs bg-slate-50 focus:outline-none focus:ring-1 focus:ring-[#006c49] font-bold text-slate-800 cursor-pointer"
+                    >
+                      {combinedCategoryOptions.map((catOption) => (
+                        <option key={catOption.ar} value={catOption.ar}>
+                          {lang === 'ar' ? catOption.ar : catOption.en}
+                        </option>
+                      ))}
+                      <option value="__CUSTOM__" className="font-bold text-amber-700 bg-amber-50">
+                        {lang === 'ar' ? '+ كتابة تصنيف جديد / مخصص...' : '+ Enter Custom Category...'}
+                      </option>
+                    </select>
+                  ) : (
+                    <div className="space-y-1 animate-fade-in">
+                      <input
+                        type="text"
+                        required
+                        autoFocus
+                        placeholder={lang === 'ar' ? 'أدخل اسم التصنيف الجديد...' : 'Enter new category name...'}
+                        value={customCategoryInputAr}
+                        onChange={(e) => {
+                          setCustomCategoryInputAr(e.target.value);
+                          setCustomCategoryInputEn(e.target.value);
+                        }}
+                        className="w-full px-2.5 py-1.5 rounded-xl border border-amber-300 text-xs bg-amber-50/70 focus:outline-none focus:ring-1 focus:ring-amber-500 font-bold text-slate-800"
+                      />
+                    </div>
+                  )}
                 </div>
 
                 {/* Qty stock modifier */}
                 <div className="space-y-1">
-                  <label className="text-xs font-semibold text-slate-700 block">
+                  <label className="text-[11px] font-bold text-slate-700 block">
                     {t.thQty}
                   </label>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5">
                     <button 
                       type="button"
                       onClick={() => setQuantity(prev => Math.max(0, parseInt(prev || '0') - 1).toString())}
-                      className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold rounded-lg cursor-pointer text-sm"
+                      className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold rounded-lg cursor-pointer text-xs"
                     >
                       -
                     </button>
@@ -648,12 +947,12 @@ export default function InventoryTab({ lang, products, onAddProduct, onUpdatePro
                       min="0"
                       value={quantity}
                       onChange={(e) => setQuantity(e.target.value)}
-                      className="w-full px-3 py-1.5 rounded-xl border border-slate-200 text-center text-sm bg-slate-50 focus:outline-none"
+                      className="w-full px-2 py-1 rounded-xl border border-slate-200 text-center text-xs bg-slate-50 focus:outline-none font-bold"
                     />
                     <button 
                       type="button"
                       onClick={() => setQuantity(prev => (parseInt(prev || '0') + 1).toString())}
-                      className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold rounded-lg cursor-pointer text-sm"
+                      className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold rounded-lg cursor-pointer text-xs"
                     >
                       +
                     </button>
@@ -662,7 +961,7 @@ export default function InventoryTab({ lang, products, onAddProduct, onUpdatePro
 
                 {/* Min Warning Qty */}
                 <div className="space-y-1">
-                  <label className="text-xs font-semibold text-slate-700 block">
+                  <label className="text-[11px] font-bold text-slate-700 block">
                     {t.labelMinQty}
                   </label>
                   <input 
@@ -670,13 +969,13 @@ export default function InventoryTab({ lang, products, onAddProduct, onUpdatePro
                     min="1"
                     value={minQuantity}
                     onChange={(e) => setMinQuantity(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm bg-slate-50 focus:outline-none"
+                    className="w-full px-2.5 py-1.5 rounded-xl border border-slate-200 text-xs bg-slate-50 focus:outline-none focus:ring-1 focus:ring-[#006c49] font-semibold"
                   />
                 </div>
 
                 {/* Buying price */}
                 <div className="space-y-1">
-                  <label className="text-xs font-semibold text-slate-700 block">
+                  <label className="text-[11px] font-bold text-slate-700 block">
                     {t.thPriceBuy} ({t.currency})
                   </label>
                   <input 
@@ -685,13 +984,13 @@ export default function InventoryTab({ lang, products, onAddProduct, onUpdatePro
                     min="0"
                     value={buyingPrice}
                     onChange={(e) => setBuyingPrice(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm bg-slate-50 focus:outline-none"
+                    className="w-full px-2.5 py-1.5 rounded-xl border border-slate-200 text-xs bg-slate-50 focus:outline-none focus:ring-1 focus:ring-[#006c49] font-semibold"
                   />
                 </div>
 
                 {/* Selling price */}
                 <div className="space-y-1">
-                  <label className="text-xs font-semibold text-slate-700 block">
+                  <label className="text-[11px] font-bold text-slate-700 block">
                     {t.thPriceSell} ({t.currency})
                   </label>
                   <input 
@@ -700,13 +999,13 @@ export default function InventoryTab({ lang, products, onAddProduct, onUpdatePro
                     min="0"
                     value={sellingPrice}
                     onChange={(e) => setSellingPrice(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm bg-slate-50 focus:outline-none font-bold"
+                    className="w-full px-2.5 py-1.5 rounded-xl border border-slate-200 text-xs bg-slate-50 focus:outline-none focus:ring-1 focus:ring-[#006c49] font-bold"
                   />
                 </div>
 
               </div>
 
-              <div className="flex gap-2.5 pt-4">
+              <div className="flex gap-2 pt-2 border-t border-slate-100 mt-2">
                 <button 
                   type="button"
                   onClick={() => setShowEditModal(false)}

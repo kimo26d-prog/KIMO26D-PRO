@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { Language, Product, SaleItem, CustomerDebt, Transaction } from '../types';
 import { CATEGORIES } from '../data';
-import { Search, ShoppingCart, Trash2, CreditCard, DollarSign, UserCheck, Check, Plus, AlertCircle, Camera, CheckCircle2 } from 'lucide-react';
+import { Search, ShoppingCart, Trash2, CreditCard, DollarSign, UserCheck, Check, Plus, AlertCircle, Camera, CheckCircle2, Package } from 'lucide-react';
 import BarcodeScannerModal from './BarcodeScannerModal';
+import InvoiceModal from './InvoiceModal';
 import { playBeepSound, playCashRegisterSound, playErrorSound, playNotificationSound, playSuccessSound, playClickSound } from '../utils/audio';
 
 interface SalesTabProps {
@@ -28,6 +29,9 @@ export default function SalesTab({ lang, products, debts, onCompleteSale, onAddC
   // Camera barcode scanner state
   const [showCameraScanner, setShowCameraScanner] = useState(false);
   const [scanToast, setScanToast] = useState<{ message: string; isError?: boolean } | null>(null);
+
+  // Completed transaction state for instant Invoice modal
+  const [completedTxForInvoice, setCompletedTxForInvoice] = useState<Transaction | null>(null);
 
   const triggerToast = (message: string, isError = false) => {
     if (isError) {
@@ -56,6 +60,26 @@ export default function SalesTab({ lang, products, debts, onCompleteSale, onAddC
     }
   };
 
+  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const query = searchQuery.trim();
+      if (!query) return;
+
+      const matchedProduct = products.find(p => p.barcode === query);
+      if (matchedProduct) {
+        if (matchedProduct.quantity <= 0) {
+          triggerToast(lang === 'ar' ? `السلعة "${matchedProduct.nameAr}" نافدة من المخزن!` : `Product "${matchedProduct.nameEn}" is out of stock!`, true);
+        } else {
+          addToCart(matchedProduct);
+          setSearchQuery('');
+          playBeepSound();
+          triggerToast(lang === 'ar' ? `تمت إضافة "${matchedProduct.nameAr}" إلى السلة` : `Added "${matchedProduct.nameEn}" to cart`);
+        }
+      }
+    }
+  };
+
   const translations = {
     ar: {
       searchPlaceholder: "ابحث عن سلعة باسمها أو رمز الباركود...",
@@ -64,9 +88,8 @@ export default function SalesTab({ lang, products, debts, onCompleteSale, onAddC
       cartEmpty: "السلة فارغة. انقر على المنتجات لإضافتها.",
       itemLabel: "سلعة",
       itemsLabel: "سلع",
-      subtotal: "المجموع الفرعي",
-      tax: "ضريبة القيمة المضافة (15%)",
-      total: "المجموع الكلي",
+      subtotal: "المجموع الصافي",
+      total: "المبلغ الإجمالي الصافي",
       payMethod: "طريقة السداد",
       cash: "نقدي (كاش)",
       card: "مدى / شبكة",
@@ -93,9 +116,8 @@ export default function SalesTab({ lang, products, debts, onCompleteSale, onAddC
       cartEmpty: "Register is empty. Tap products to add them.",
       itemLabel: "item",
       itemsLabel: "items",
-      subtotal: "Subtotal",
-      tax: "VAT (15%)",
-      total: "Total Amount",
+      subtotal: "Net Subtotal",
+      total: "Total Net Amount",
       payMethod: "Payment Method",
       cash: "Cash Sale",
       card: "Mada / Card",
@@ -199,10 +221,9 @@ export default function SalesTab({ lang, products, debts, onCompleteSale, onAddC
     setCart(cart.filter(item => item.productId !== productId));
   };
 
-  // Totals calculations
-  const subtotal = cart.reduce((sum, item) => sum + (item.sellingPrice * item.quantity), 0);
-  const vat = subtotal * 0.15;
-  const totalAmount = subtotal + vat;
+  // Totals calculations - Pure Net Total without VAT addition
+  const totalAmount = cart.reduce((sum, item) => sum + (item.sellingPrice * item.quantity), 0);
+  const totalItemsCount = cart.reduce((sum, item) => sum + item.quantity, 0);
 
   const handleCheckout = (e: React.FormEvent) => {
     e.preventDefault();
@@ -272,7 +293,7 @@ export default function SalesTab({ lang, products, debts, onCompleteSale, onAddC
       setCart([]);
       setSelectedDebtorId('');
       playCashRegisterSound();
-      alert(t.successSale);
+      setCompletedTxForInvoice(transaction);
     } catch (err: any) {
       playErrorSound();
       alert(err.message || 'Error executing cashier checkout.');
@@ -318,6 +339,7 @@ export default function SalesTab({ lang, products, debts, onCompleteSale, onAddC
                 placeholder={t.searchPlaceholder}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={handleSearchKeyDown}
                 className={`w-full py-2.5 pr-10 pl-4 rounded-xl border border-slate-200 text-sm bg-slate-50 focus:outline-none focus:border-slate-950 ${lang === 'ar' ? 'text-right' : 'text-left'}`}
               />
             </div>
@@ -421,6 +443,18 @@ export default function SalesTab({ lang, products, debts, onCompleteSale, onAddC
             );
           })}
         </div>
+
+        {filteredProducts.length === 0 && (
+          <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-8 text-center my-4">
+            <Package className="mx-auto text-slate-300 mb-2" size={32} />
+            <p className="text-xs font-bold text-slate-700 font-display">
+              {lang === 'ar' ? 'لا توجد سلع مسجلة تطابق البحث' : 'No products found'}
+            </p>
+            <p className="text-[11px] text-slate-500 mt-1">
+              {lang === 'ar' ? 'قم بتسجيل سلع متجرك من تبويب "إدارة المخزون" لتبدأ عمليات البيع بالكاشير.' : 'Add items from Inventory Tab to display them here in POS.'}
+            </p>
+          </div>
+        )}
       </div>
 
       {/* RIGHT COLUMN: Sales Register & Cashier Summary (Col Span 5) */}
@@ -497,18 +531,14 @@ export default function SalesTab({ lang, products, debts, onCompleteSale, onAddC
         {/* Footer Checkout Summary */}
         <div className="mt-6 pt-5 border-t border-slate-100 space-y-4">
           
-          {/* Detailed Calculations */}
+          {/* Net Price Calculations Summary */}
           <div className="space-y-1.5 text-xs text-slate-500 font-sans">
             <div className="flex justify-between">
-              <span>{t.subtotal}</span>
-              <span className="font-bold text-slate-800">{subtotal.toFixed(2)} {t.currency}</span>
+              <span>{lang === 'ar' ? 'عدد السلع المحددة:' : 'Selected Items:'}</span>
+              <span className="font-bold text-slate-800">{totalItemsCount} {totalItemsCount === 1 ? t.itemLabel : t.itemsLabel}</span>
             </div>
-            <div className="flex justify-between">
-              <span>{t.tax}</span>
-              <span className="font-bold text-slate-800">{vat.toFixed(2)} {t.currency}</span>
-            </div>
-            <div className="flex justify-between pt-1 border-t border-slate-100 text-sm font-display text-slate-950">
-              <span className="font-bold">{t.total}</span>
+            <div className="flex justify-between pt-2 border-t border-slate-100 text-sm font-display text-slate-950">
+              <span className="font-bold">{lang === 'ar' ? 'المبلغ الصافي المستحق:' : 'Net Total Amount:'}</span>
               <span className="font-extrabold text-xl text-[#006c49]">
                 {totalAmount.toFixed(2)} <span className="text-xs font-semibold font-sans">{t.currency}</span>
               </span>
@@ -671,6 +701,17 @@ export default function SalesTab({ lang, products, debts, onCompleteSale, onAddC
           onScanSuccess={handleCameraScanSuccess}
           title={lang === 'ar' ? 'كاميرا الكاشير: مسح باركود السلعة' : 'Register Scanner: Scan Item Barcode'}
           continuous={true}
+          lastScanFeedback={scanToast}
+        />
+      )}
+
+      {/* Official Invoice Print/PDF Modal on Sale Complete */}
+      {completedTxForInvoice && (
+        <InvoiceModal
+          lang={lang}
+          transaction={completedTxForInvoice}
+          isNewSale={true}
+          onClose={() => setCompletedTxForInvoice(null)}
         />
       )}
 
